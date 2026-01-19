@@ -1,50 +1,42 @@
 import { create } from "zustand";
-import type { Agent, AgentStatus, AgentType } from "../types";
-import { DESK_CONFIGS } from "../types";
+import type { Agent, AgentStatus } from "../types";
 
 interface AgentState {
   agents: Record<string, Agent>;
+  vacationById: Record<string, boolean>;
   initializeAgents: () => void;
   updateAgent: (agent: Agent) => void;
   setAgentStatus: (id: string, status: AgentStatus) => void;
   setAgentTask: (id: string, task: string | null) => void;
+  setAgentVacation: (id: string, on: boolean) => void;
   resetAllToIdle: () => void;
 }
 
-const createInitialAgent = (
-  id: string,
-  agentType: AgentType,
-  position: [number, number]
-): Agent => ({
-  id,
-  agent_type: agentType,
-  status: "idle",
-  current_task: null,
-  desk_position: position,
-});
-
 export const useAgentStore = create<AgentState>((set) => ({
   agents: {},
+  vacationById: {},
 
   initializeAgents: () => {
-    const agents: Record<string, Agent> = {};
-    for (const config of DESK_CONFIGS) {
-      agents[config.id] = createInitialAgent(
-        config.id,
-        config.agentType,
-        config.position
-      );
-    }
-    set({ agents });
+    // Keep empty by default. Agents will appear only when the backend emits an update.
+    // (We still keep the function for compatibility.)
+    set({ agents: {}, vacationById: {} });
   },
 
   updateAgent: (agent) => {
-    set((state) => ({
-      agents: {
-        ...state.agents,
-        [agent.id]: agent,
-      },
-    }));
+    set((state) => {
+      // If we haven't seen this agent before and it's idle, ignore it.
+      // This prevents agents from appearing in the office until they start working.
+      if (!state.agents[agent.id] && agent.status === "idle") {
+        return state;
+      }
+
+      return {
+        agents: {
+          ...state.agents,
+          [agent.id]: agent,
+        },
+      };
+    });
   },
 
   setAgentStatus: (id, status) => {
@@ -71,6 +63,15 @@ export const useAgentStore = create<AgentState>((set) => ({
         },
       };
     });
+  },
+
+  setAgentVacation: (id, on) => {
+    set((state) => ({
+      vacationById: {
+        ...state.vacationById,
+        [id]: on,
+      },
+    }));
   },
 
   resetAllToIdle: () => {

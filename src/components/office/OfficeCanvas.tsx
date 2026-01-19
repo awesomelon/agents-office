@@ -21,9 +21,44 @@ const WALL_HEIGHT = 65;
 // Animation timing
 const ANIMATION_INTERVAL_MS = 250;
 
+// Entry/exit motion
+const ENTRY_EXIT_START_X = OFFICE_WIDTH / 2;
+const ENTRY_EXIT_START_Y = OFFICE_HEIGHT + 60;
+const ENTER_DURATION_MS = 700;
+const EXIT_DURATION_MS = 500;
+
 // Text limits
 const SPEECH_BUBBLE_MAX_CHARS = 45;
 const SPEECH_BUBBLE_TRUNCATE_AT = 42;
+
+// Vacation sign
+const VACATION_SIGN_WIDTH = 52;
+const VACATION_SIGN_HEIGHT = 18;
+// Place it on the desk front (below the desktop edge, above the desk label).
+const DESK_VACATION_SIGN_X = 0;
+const DESK_VACATION_SIGN_Y = 34;
+
+type MotionPhase = "absent" | "entering" | "present" | "exiting";
+
+interface AgentMotion {
+  phase: MotionPhase;
+  startedAt: number;
+  durationMs: number;
+  from: { x: number; y: number; alpha: number };
+  to: { x: number; y: number; alpha: number };
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
 
 // Hair colors by agent type
 const HAIR_COLORS: Record<AgentType, number> = {
@@ -130,6 +165,7 @@ interface DeskProps {
   x: number;
   y: number;
   label: string;
+  showVacation: boolean;
 }
 
 const DESK_LABEL_STYLE = new TextStyle({
@@ -142,7 +178,7 @@ const DESK_LABEL_STYLE = new TextStyle({
   dropShadowDistance: 1,
 });
 
-function Desk({ x, y, label }: DeskProps): JSX.Element {
+function Desk({ x, y, label, showVacation }: DeskProps): JSX.Element {
   const draw = useCallback((g: any) => {
     g.clear();
     drawDeskBase(g);
@@ -154,6 +190,11 @@ function Desk({ x, y, label }: DeskProps): JSX.Element {
   return (
     <Container x={x} y={y}>
       <Graphics draw={draw} />
+      {showVacation && (
+        <Container x={DESK_VACATION_SIGN_X} y={DESK_VACATION_SIGN_Y}>
+          <VacationSign />
+        </Container>
+      )}
       <Text text={label} style={DESK_LABEL_STYLE} anchor={0.5} y={45} />
     </Container>
   );
@@ -245,9 +286,55 @@ function drawDeskItems(g: any): void {
 
 interface AgentSpriteProps {
   agent: Agent;
+  x: number;
+  y: number;
+  alpha: number;
 }
 
-function AgentSprite({ agent }: AgentSpriteProps): JSX.Element {
+const VACATION_SIGN_TEXT_STYLE = new TextStyle({
+  fontFamily: '"Press Start 2P", monospace',
+  fontSize: 6,
+  fill: 0xfff7ed,
+  dropShadow: true,
+  dropShadowColor: 0x000000,
+  dropShadowBlur: 0,
+  dropShadowDistance: 1,
+});
+
+function VacationSign(): JSX.Element {
+  const draw = useCallback((g: any) => {
+    g.clear();
+
+    // Sign shadow
+    g.beginFill(0x000000, 0.2);
+    g.drawRoundedRect(-VACATION_SIGN_WIDTH / 2 + 1, -VACATION_SIGN_HEIGHT / 2 + 1, VACATION_SIGN_WIDTH, VACATION_SIGN_HEIGHT, 4);
+    g.endFill();
+
+    // Sign base
+    g.beginFill(0x8b5a2b);
+    g.drawRoundedRect(-VACATION_SIGN_WIDTH / 2, -VACATION_SIGN_HEIGHT / 2, VACATION_SIGN_WIDTH, VACATION_SIGN_HEIGHT, 4);
+    g.endFill();
+
+    // Border
+    g.lineStyle(1, 0x654321, 0.8);
+    g.drawRoundedRect(-VACATION_SIGN_WIDTH / 2, -VACATION_SIGN_HEIGHT / 2, VACATION_SIGN_WIDTH, VACATION_SIGN_HEIGHT, 4);
+
+    // Pin
+    g.lineStyle(0);
+    g.beginFill(0xef4444);
+    g.drawCircle(-VACATION_SIGN_WIDTH / 2 + 6, -VACATION_SIGN_HEIGHT / 2 + 6, 2);
+    g.endFill();
+  }, []);
+
+  return (
+    <Container>
+      <Graphics draw={draw} />
+      <Text text="휴가중" style={VACATION_SIGN_TEXT_STYLE} anchor={0.5} />
+    </Container>
+  );
+}
+
+function AgentSprite({ agent, x, y, alpha }: AgentSpriteProps): JSX.Element {
   const [frame, setFrame] = useState(0);
   const color = AGENT_COLORS[agent.agent_type];
   const statusColor = STATUS_COLORS[agent.status];
@@ -289,7 +376,7 @@ function AgentSprite({ agent }: AgentSpriteProps): JSX.Element {
   const showBubble = agent.status !== "idle" && message;
 
   return (
-    <Container x={agent.desk_position[0]} y={agent.desk_position[1] - 55}>
+    <Container x={x} y={y} alpha={alpha}>
       <Graphics draw={draw} />
       {showBubble && <SpeechBubble text={message} />}
     </Container>
@@ -493,7 +580,96 @@ function SpeechBubble({ text }: SpeechBubbleProps): JSX.Element {
 
 export function OfficeCanvas(): JSX.Element {
   const agents = useAgentStore((state) => state.agents);
+  const vacationById = useAgentStore((state) => state.vacationById);
   const [dimensions, setDimensions] = useState({ width: OFFICE_WIDTH, height: OFFICE_HEIGHT });
+  const [now, setNow] = useState(() => performance.now());
+  const [motionById, setMotionById] = useState<Record<string, AgentMotion>>({});
+
+  // Drive animations via requestAnimationFrame.
+  useEffect(() => {
+    let raf = 0;
+    const tick = (t: number) => {
+      setNow(t);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // Start transitions when agent status changes (idle <-> non-idle).
+  useEffect(() => {
+    const ts = now;
+    const start = { x: ENTRY_EXIT_START_X, y: ENTRY_EXIT_START_Y };
+
+    setMotionById((prev) => {
+      const next: Record<string, AgentMotion> = { ...prev };
+
+      for (const agent of Object.values(agents)) {
+        const id = agent.id;
+        const target = { x: agent.desk_position[0], y: agent.desk_position[1] - 55 };
+        const wantsVisible = agent.status !== "idle" || Boolean(vacationById[id]);
+        const current = next[id];
+
+        const currentPhase: MotionPhase = current?.phase ?? "absent";
+        if (wantsVisible) {
+          if (currentPhase === "absent" || currentPhase === "exiting") {
+            const fromState = currentPhase === "exiting"
+              ? computeMotionState(current, ts)
+              : { x: start.x, y: start.y, alpha: 0 };
+
+            next[id] = {
+              phase: "entering",
+              startedAt: ts,
+              durationMs: ENTER_DURATION_MS,
+              from: { x: fromState.x, y: fromState.y, alpha: fromState.alpha },
+              to: { x: target.x, y: target.y, alpha: 1 },
+            };
+          }
+        } else {
+          if (currentPhase === "present" || currentPhase === "entering") {
+            const fromState = currentPhase === "entering"
+              ? computeMotionState(current, ts)
+              : { x: target.x, y: target.y, alpha: 1 };
+
+            next[id] = {
+              phase: "exiting",
+              startedAt: ts,
+              durationMs: EXIT_DURATION_MS,
+              from: { x: fromState.x, y: fromState.y, alpha: fromState.alpha },
+              to: { x: start.x, y: start.y, alpha: 0 },
+            };
+          }
+        }
+      }
+
+      return next;
+    });
+  }, [agents, now, vacationById]);
+
+  // Finalize motions (entering->present, exiting->absent).
+  useEffect(() => {
+    const ts = now;
+    setMotionById((prev) => {
+      let changed = false;
+      const next: Record<string, AgentMotion> = { ...prev };
+
+      for (const [id, motion] of Object.entries(prev)) {
+        if (motion.phase !== "entering" && motion.phase !== "exiting") continue;
+
+        const progress = (ts - motion.startedAt) / motion.durationMs;
+        if (progress < 1) continue;
+
+        changed = true;
+        if (motion.phase === "entering") {
+          next[id] = { ...motion, phase: "present" };
+        } else {
+          next[id] = { ...motion, phase: "absent" };
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [now]);
 
   useEffect(() => {
     function updateDimensions(): void {
@@ -520,6 +696,15 @@ export function OfficeCanvas(): JSX.Element {
   const offsetX = (dimensions.width - OFFICE_WIDTH * scale) / 2;
   const offsetY = (dimensions.height - OFFICE_HEIGHT * scale) / 2;
 
+  const visibleAgents = useMemo(() => {
+    return Object.values(agents).filter((agent) => {
+      const phase = motionById[agent.id]?.phase ?? "absent";
+      if (phase !== "absent") return true;
+      // Avoid popping an idle agent instantly at full alpha; wait for motion to start.
+      return Boolean(vacationById[agent.id]) && Boolean(motionById[agent.id]);
+    });
+  }, [agents, motionById, vacationById]);
+
   return (
     <div className="office-container w-full h-full bg-inbox-bg">
       <Stage
@@ -535,13 +720,36 @@ export function OfficeCanvas(): JSX.Element {
               x={desk.position[0]}
               y={desk.position[1]}
               label={desk.label}
+              showVacation={Boolean(vacationById[desk.id])}
             />
           ))}
-          {Object.values(agents).map((agent) => (
-            <AgentSprite key={agent.id} agent={agent} />
-          ))}
+          {visibleAgents.map((agent) => {
+            const target = { x: agent.desk_position[0], y: agent.desk_position[1] - 55 };
+            const motion = motionById[agent.id];
+            const state = motion ? computeMotionState(motion, now) : { x: target.x, y: target.y, alpha: 1 };
+
+            return (
+              <AgentSprite
+                key={agent.id}
+                agent={agent}
+                x={state.x}
+                y={state.y}
+                alpha={state.alpha}
+              />
+            );
+          })}
         </Container>
       </Stage>
     </div>
   );
+}
+
+function computeMotionState(motion: AgentMotion, now: number): { x: number; y: number; alpha: number } {
+  const t = clamp01((now - motion.startedAt) / motion.durationMs);
+  const e = easeOutCubic(t);
+  return {
+    x: lerp(motion.from.x, motion.to.x, e),
+    y: lerp(motion.from.y, motion.to.y, e),
+    alpha: lerp(motion.from.alpha, motion.to.alpha, e),
+  };
 }
