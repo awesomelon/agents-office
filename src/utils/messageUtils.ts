@@ -23,7 +23,7 @@ const TOOL_ACTIONS: Record<string, string> = {
 };
 
 export function formatAgentMessage(context: MessageContext): string {
-  const { status, rawTask } = context;
+  const { status, rawTask, agentType } = context;
 
   if (status === "idle" || !rawTask) {
     return "";
@@ -57,11 +57,51 @@ export function formatAgentMessage(context: MessageContext): string {
     return targetAgent ? `작업 전달 중: ${targetAgent}` : "작업 전달 중";
   }
 
+  // If the message is mostly English free-text (e.g. "Stream Started received..."),
+  // don't show the raw content in bubble. Keep it as a simple Korean status summary.
+  if (isMostlyEnglishFreeText(normalized)) {
+    return getStatusSummaryKo(agentType, status);
+  }
+
   if (status === "thinking") {
     return simplifyMessage(normalized, 28);
   }
 
   return simplifyMessage(normalized, 34);
+}
+
+function getStatusSummaryKo(agentType: AgentType, status: AgentStatus): string {
+  const label = getAgentLabelKo(agentType);
+  if (status === "thinking") return `${label} 생각 중`;
+  if (status === "working") return `${label} 작업 중`;
+  // For unexpected statuses (idle/error are handled earlier), fall back to a safe message.
+  return `${label} 작업 중`;
+}
+
+function getAgentLabelKo(agentType: AgentType): string {
+  const label: Record<AgentType, string> = {
+    researcher: "리서처",
+    coder: "코더",
+    reviewer: "리뷰어",
+    artist: "아티스트",
+  };
+  return label[agentType] ?? "에이전트";
+}
+
+function isMostlyEnglishFreeText(message: string): boolean {
+  const t = message.trim();
+  if (t.length < 10) return false;
+
+  // If there's any Korean, treat it as not-English.
+  if (/[가-힣]/.test(t)) return false;
+
+  const alpha = (t.match(/[A-Za-z]/g) ?? []).length;
+  const alnum = (t.match(/[A-Za-z0-9]/g) ?? []).length;
+  if (alnum === 0) return false;
+
+  // Require enough English letters and a high ratio to avoid false positives on paths/ids.
+  const ratio = alpha / alnum;
+  return alpha >= 6 && ratio >= 0.5;
 }
 
 function normalizeRawTask(rawTask: string): string {

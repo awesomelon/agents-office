@@ -7,6 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #202 | 11:35 AM | 🟣 | Filesystem Watcher with Incremental Log Reading | ~583 |
-| #200 | " | 🟣 | Watcher Module Structure for Log Monitoring | ~208 |
+| #200 | 11:35 AM | 🟣 | Watcher Module Structure for Log Monitoring | ~208 |
 </claude-mem-context>

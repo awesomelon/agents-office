@@ -1,4 +1,4 @@
-use crate::models::{Agent, AppEvent};
+use crate::models::{Agent, AppEvent, LogEntry, LogEntryType};
 use crate::watcher::log_parser::{
     determine_agent_status, determine_agent_type, parse_debug_line, parse_session_line,
 };
@@ -159,13 +159,31 @@ async fn process_event(
                     id: format!("{:?}", agent_type).to_lowercase(),
                     agent_type,
                     status,
-                    current_task: Some(entry.content.chars().take(50).collect()),
+                    current_task: Some(summarize_current_task(&entry).chars().take(200).collect()),
                     desk_position: get_desk_position(agent_type),
                 };
 
                 let _ = app.emit("app-event", AppEvent::AgentUpdate(agent));
             }
         }
+    }
+}
+
+fn summarize_current_task(entry: &LogEntry) -> String {
+    match entry.entry_type {
+        LogEntryType::ToolCall => match entry.tool_name.as_deref() {
+            Some(name) => format!("Tool call: {name}"),
+            None => "Tool call".to_string(),
+        },
+        LogEntryType::ToolResult => match entry.tool_name.as_deref() {
+            Some(name) => format!("Tool result: {name}"),
+            None => "Tool result".to_string(),
+        },
+        LogEntryType::TodoUpdate => "Todo update".to_string(),
+        LogEntryType::SessionStart => "Session start".to_string(),
+        LogEntryType::SessionEnd => "Session end".to_string(),
+        LogEntryType::Error => "Error".to_string(),
+        LogEntryType::Message => entry.content.clone(),
     }
 }
 
