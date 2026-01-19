@@ -40,17 +40,24 @@ export interface DeskConfig {
   position: [number, number];
   agentType: AgentType;
   label: string;
+  // Visual direction of the desk row (used for desk drawing / agent placement).
+  facing?: "up" | "down";
 }
 
 export const DESK_CONFIGS: DeskConfig[] = [
-  { id: "reader", position: [115, 160], agentType: "reader", label: "Reader" },
-  { id: "searcher", position: [315, 160], agentType: "searcher", label: "Searcher" },
-  { id: "writer", position: [515, 160], agentType: "writer", label: "Writer" },
-  { id: "editor", position: [715, 160], agentType: "editor", label: "Editor" },
-  { id: "runner", position: [115, 360], agentType: "runner", label: "Runner" },
-  { id: "tester", position: [315, 360], agentType: "tester", label: "Tester" },
-  { id: "planner", position: [515, 360], agentType: "planner", label: "Planner" },
-  { id: "support", position: [715, 360], agentType: "support", label: "Support" },
+  // Section A: 상단 3개 (facing up, 벽 밀착) - 좌측 정렬
+  { id: "reader", position: [60, 130], agentType: "reader", label: "Reader", facing: "up" },
+  { id: "searcher", position: [200, 130], agentType: "searcher", label: "Searcher", facing: "up" },
+  { id: "writer", position: [340, 130], agentType: "writer", label: "Writer", facing: "up" },
+
+  // Section B: 중단 3개 (facing down) - 좌측 정렬
+  { id: "editor", position: [60, 320], agentType: "editor", label: "Editor", facing: "down" },
+  { id: "runner", position: [200, 320], agentType: "runner", label: "Runner", facing: "down" },
+  { id: "tester", position: [340, 320], agentType: "tester", label: "Tester", facing: "down" },
+
+  // Section C: 하단 2개 (facing up) - 좌측 정렬
+  { id: "planner", position: [60, 520], agentType: "planner", label: "Planner", facing: "up" },
+  { id: "support", position: [200, 520], agentType: "support", label: "Support", facing: "up" },
 ];
 
 export const AGENT_COLORS: Record<AgentType, number> = {

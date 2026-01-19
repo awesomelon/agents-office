@@ -55,10 +55,11 @@ cd src-tauri && cargo test
 - **models/mod.rs**: `Agent`, `LogEntry`, `AppEvent` 타입 정의
 
 ### Frontend (src/)
-- **components/office/OfficeCanvas.tsx**: PixiJS 기반 4x2 사무실 렌더링 (900x500 캔버스)
+- **components/office/OfficeCanvas.tsx**: PixiJS 기반 사무실 렌더링 (900x700 캔버스)
   - `FlyingDocument`: 에이전트 간 서류 전달 애니메이션 (포물선 궤적, 회전)
   - `MonitorScreen`: 에이전트 상태별 모니터 화면 동적 변화
   - `AgentSprite`: 에이전트 캐릭터 렌더링 및 바운스 애니메이션
+  - `HorizontalPartition`: 섹션 구분용 연두색 가로 파티션 바
   - `HudDisplay`: 상단 HUD 바 (툴콜/에러/에이전트전환 카운트, 레이트리밋 표시)
   - `AlertLight`: 에러 발생 시 책상 위 빨간 경고등 깜빡임
   - `QueueIndicator`: 레이트리밋 시 모래시계 + 대기열 점 애니메이션
@@ -72,7 +73,7 @@ cd src-tauri && cargo test
   - 60초 슬라이딩 윈도우로 tool_call, error, agent_switch 이벤트 추적
   - `rateLimitActive`: 레이트리밋 활성 상태
 - **store/logStore.ts**: 로그 엔트리 관리
-- **types/index.ts**: 타입 정의, `DESK_CONFIGS` (4x2 그리드 배치), `AGENT_COLORS`
+- **types/index.ts**: 타입 정의, `DESK_CONFIGS` (3-3-2 세로 배치), `AGENT_COLORS`
 
 ### Type Synchronization (중요)
 Rust와 TypeScript 타입은 수동 동기화 필요:
@@ -105,12 +106,22 @@ function isTauriEnv(): boolean {
 - AskUserQuestion/Error → Support (보라색 0xa78bfa)
 
 ### Office Layout
-4x2 그리드 배치 (`DESK_CONFIGS` in types/index.ts, 900x500 캔버스):
+3-3-2 세로 배치 (`DESK_CONFIGS` in types/index.ts, 900x700 캔버스, 좌측 정렬):
 ```
-Reader(115,160) | Searcher(315,160) | Writer(515,160)  | Editor(715,160)
-----------------+-------------------+------------------+------------------
-Runner(115,360) | Tester(315,360)   | Planner(515,360) | Support(715,360)
+┌─────────────────────────────────────────────┐ Y=0
+│              (벽 영역 70px)                  │
+├═══════════════════════┤                     │ Y=70 (파티션 1)
+│ [Reader]  [Searcher]  [Writer]              │ Y=130 (facing up)
+│   (60)      (200)      (340)                │
+│                                             │
+│ [Editor]  [Runner]    [Tester]              │ Y=320 (facing down)
+│   (60)      (200)      (340)                │
+├═══════════════════════┤                     │ Y=420 (파티션 2)
+│ [Planner] [Support]                         │ Y=520 (facing up)
+│   (60)      (200)                           │
+└─────────────────────────────────────────────┘ Y=700
 ```
+Agent 위치는 `getAgentPosition()` 함수가 DESK_CONFIGS에서 계산 (책상 Y - 55px).
 
 ### Document Transfer Animation
 에이전트 간 업무 전환을 서류 전달로 시각화:

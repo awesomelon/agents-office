@@ -9,24 +9,45 @@ import { formatAgentMessage } from "../../utils";
 
 // Canvas dimensions
 const OFFICE_WIDTH = 900;
-const OFFICE_HEIGHT = 500;
+const OFFICE_HEIGHT = 700;
 
 type ViewportRect = { x: number; y: number; width: number; height: number };
 
-// Floor configuration
-const FLOOR_START_Y = 60;
-const BRICK_WIDTH = 32;
-const BRICK_HEIGHT = 16;
+// Top band / entrance configuration
+const WALL_HEIGHT = 70;
+const ENTRANCE_WIDTH = 88;
+const ENTRANCE_HEIGHT = 48;
+const ENTRANCE_TOP_Y = 10;
+const ENTRANCE_PADDING = 6;
 
-// Wall configuration
-const WALL_HEIGHT = 65;
+// Wall (beige) palette
+const WALL_BEIGE_BASE = 0xe7d8bf;
+const WALL_BEIGE_STRIPE = 0xd8c7ab;
+const WALL_BEIGE_TRIM = 0xc8b597;
+const WALL_BEIGE_SHADOW = 0xb8a68a;
+
+// Floor configuration (square tiles)
+const FLOOR_START_Y = WALL_HEIGHT;
+const TILE_SIZE = 24;
+const TILE_GAP = 1; // grout gap between tiles
+const TILE_GROUT_COLOR = 0xe5e7eb;
+const TILE_BASE_COLOR = 0xf9fafb;
+const TILE_VARIATION_DELTA = 10; // per-channel delta
+const TILE_BORDER_COLOR = 0xd1d5db;
+const TILE_SCRATCH_COLOR = 0x94a3b8;
+const TILE_SCRATCH_ALPHA = 0.35;
+const TILE_SCRATCH_DENSITY = 0.13; // chance per tile
+
+// Bottom windows band (bottom-of-scene)
+const BOTTOM_WINDOW_BAND_HEIGHT = 78;
+const BOTTOM_WINDOW_BAND_MARGIN = 10;
 
 // Animation timing
 const ANIMATION_INTERVAL_MS = 250;
 
 // Entry motion
 const ENTRY_START_X = OFFICE_WIDTH / 2;
-const ENTRY_START_Y = OFFICE_HEIGHT + 60;
+const ENTRY_START_Y = -60;
 const ENTER_DURATION_MS = 700;
 
 // Text limits
@@ -52,6 +73,7 @@ const QUEUE_DOT_BLINK_MS = 500;
 
 // HUD bar
 const HUD_BAR_HEIGHT = 20;
+const SHOW_HUD = false;
 
 type MotionPhase = "absent" | "entering" | "present";
 
@@ -73,6 +95,42 @@ function clamp01(v: number): number {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+function clampByte(v: number): number {
+  return Math.max(0, Math.min(255, v));
+}
+
+function adjustColor(color: number, delta: number): number {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  const rr = clampByte(r + delta);
+  const gg = clampByte(g + delta);
+  const bb = clampByte(b + delta);
+  return (rr << 16) | (gg << 8) | bb;
+}
+
+function hash2dInt(x: number, y: number): number {
+  // Deterministic integer hash (no RNG) for stable tile scratches/variation.
+  let h = x * 374761393 + y * 668265263; // large primes
+  h = (h ^ (h >>> 13)) * 1274126177;
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+function rand01FromHash(h: number): number {
+  return (h >>> 0) / 0xffffffff;
+}
+
+function shouldDrawBottomBand(viewport: ViewportRect): boolean {
+  // Avoid doing extra work when the viewport doesn't include the band area.
+  const bandY = OFFICE_HEIGHT - BOTTOM_WINDOW_BAND_MARGIN - BOTTOM_WINDOW_BAND_HEIGHT;
+  return viewport.y + viewport.height >= bandY && viewport.y <= bandY + BOTTOM_WINDOW_BAND_HEIGHT;
+}
+
+function shouldDrawTopBand(viewport: ViewportRect): boolean {
+  return viewport.y <= WALL_HEIGHT;
 }
 
 // Hair colors by agent type
@@ -98,50 +156,96 @@ function OfficeBackground({ viewport }: { viewport: ViewportRect }): JSX.Element
     const viewRight = viewX + viewW;
     const viewBottom = viewY + viewH;
 
-    // Floor base
-    g.beginFill(0x8b6b4a);
+    // Base background (grout tone)
+    g.lineStyle(0);
+    g.beginFill(TILE_GROUT_COLOR);
     g.drawRect(viewX, viewY, viewW, viewH);
     g.endFill();
 
-    // Brick pattern floor
-    const floorStartY = Math.max(FLOOR_START_Y, viewY);
-    for (let y = floorStartY; y < viewBottom; y += BRICK_HEIGHT) {
-      const offset = Math.floor(y / BRICK_HEIGHT) % 2 === 0 ? 0 : BRICK_WIDTH / 2;
-      const baseX = -BRICK_WIDTH / 2 + offset;
-      const kStart = Math.floor((viewX - BRICK_WIDTH - baseX) / BRICK_WIDTH);
-      const xStart = baseX + kStart * BRICK_WIDTH;
-      for (let x = xStart; x < viewRight + BRICK_WIDTH; x += BRICK_WIDTH) {
-        const mod = ((x + y) % 3 + 3) % 3;
-        const shade = mod === 0 ? 0x7a5c3a : 0x8b6b4a;
-        g.beginFill(shade);
-        g.drawRect(x, y, BRICK_WIDTH - 1, BRICK_HEIGHT - 1);
+    // Top band (wall / entrance area)
+    if (shouldDrawTopBand(viewport)) {
+      const topBandTop = viewY;
+      const topBandBottom = Math.min(WALL_HEIGHT, viewBottom);
+      if (topBandBottom > topBandTop) {
+        g.beginFill(WALL_BEIGE_BASE);
+        g.drawRect(viewX, topBandTop, viewW, topBandBottom - topBandTop);
         g.endFill();
+
+        // Subtle texture stripes
+        g.beginFill(WALL_BEIGE_STRIPE, 0.35);
+        const stripeStart = Math.floor(viewX / 12) * 12;
+        for (let x = stripeStart; x < viewRight; x += 12) {
+          g.drawRect(x, topBandTop, 4, topBandBottom - topBandTop);
+        }
+        g.endFill();
+
+        // Wall base trim
+        g.lineStyle(2, WALL_BEIGE_TRIM, 1);
+        g.moveTo(viewX, topBandBottom);
+        g.lineTo(viewRight, topBandBottom);
+        g.lineStyle(0);
       }
     }
 
-    // Brick grout lines
-    g.lineStyle(1, 0x5a4a3a, 0.3);
-    for (let y = floorStartY; y < viewBottom; y += BRICK_HEIGHT) {
-      g.moveTo(viewX, y);
-      g.lineTo(viewRight, y);
+    // Floor tiles (below top band)
+    const floorStartY = Math.max(FLOOR_START_Y, viewY);
+    if (viewBottom > floorStartY) {
+      const tileStartX = Math.floor(viewX / TILE_SIZE);
+      const tileEndX = Math.floor(viewRight / TILE_SIZE);
+      const tileStartY = Math.floor(floorStartY / TILE_SIZE);
+      const tileEndY = Math.floor(viewBottom / TILE_SIZE);
+
+      for (let ty = tileStartY; ty <= tileEndY; ty++) {
+        const y = ty * TILE_SIZE;
+        if (y + TILE_SIZE < floorStartY) continue;
+        for (let tx = tileStartX; tx <= tileEndX; tx++) {
+          const x = tx * TILE_SIZE;
+
+          const h = hash2dInt(tx, ty);
+          const r1 = rand01FromHash(h);
+          const r2 = rand01FromHash(hash2dInt(tx + 17, ty - 29));
+
+          const delta = Math.round((r1 - 0.5) * 2 * TILE_VARIATION_DELTA);
+          const tileColor = adjustColor(TILE_BASE_COLOR, delta);
+
+          g.beginFill(tileColor);
+          g.drawRect(x, y, TILE_SIZE - TILE_GAP, TILE_SIZE - TILE_GAP);
+          g.endFill();
+
+          // Border hint (very subtle)
+          if ((tx + ty) % 7 === 0) {
+            g.beginFill(TILE_BORDER_COLOR, 0.25);
+            g.drawRect(x, y + TILE_SIZE - 2, TILE_SIZE - TILE_GAP, 1);
+            g.drawRect(x + TILE_SIZE - 2, y, 1, TILE_SIZE - TILE_GAP);
+            g.endFill();
+          }
+
+          // Scratches (deterministic)
+          if (r2 < TILE_SCRATCH_DENSITY) {
+            const r3 = rand01FromHash(hash2dInt(tx - 7, ty + 11));
+            const r4 = rand01FromHash(hash2dInt(tx + 31, ty + 3));
+            const sx = x + 3 + Math.floor(r3 * (TILE_SIZE - 10));
+            const sy = y + 3 + Math.floor(r4 * (TILE_SIZE - 10));
+            const len = 4 + Math.floor(r1 * 6);
+
+            g.beginFill(TILE_SCRATCH_COLOR, TILE_SCRATCH_ALPHA);
+            if (r1 < 0.5) {
+              // Horizontal scratch
+              g.drawRect(sx, sy, len, 1);
+              if (r3 < 0.35) g.drawRect(sx + 1, sy + 2, Math.max(2, len - 2), 1);
+            } else {
+              // Vertical scratch
+              g.drawRect(sx, sy, 1, len);
+              if (r3 < 0.35) g.drawRect(sx + 2, sy + 1, 1, Math.max(2, len - 2));
+            }
+            g.endFill();
+          }
+        }
+      }
     }
 
-    // Wall
-    g.lineStyle(0);
-    g.beginFill(0x5a4a6a);
-    g.drawRect(viewX, viewY, viewW, WALL_HEIGHT - viewY);
-    g.endFill();
-
-    // Wall texture
-    g.beginFill(0x6a5a7a, 0.3);
-    const stripeStart = Math.floor(viewX / 8) * 8;
-    for (let x = stripeStart; x < viewRight; x += 8) {
-      g.drawRect(x, viewY, 4, WALL_HEIGHT - viewY);
-    }
-    g.endFill();
-
-    // Decorative plants
-    g.lineStyle(0);
+    // Entrance + bottom windows (repeat per 900px segment)
+    // Bottom band can be skipped when viewport doesn't intersect it.
     drawRepeatedDecorations(g, viewport);
   }, [viewport]);
 
@@ -156,60 +260,168 @@ function drawRepeatedDecorations(g: any, viewport: ViewportRect): void {
   const segStart = Math.floor((viewX - OFFICE_WIDTH) / OFFICE_WIDTH);
   const segEnd = Math.floor((viewRight + OFFICE_WIDTH) / OFFICE_WIDTH);
 
-  const baseWindowPositions = [140, 320, 500, 680];
-
   for (let seg = segStart; seg <= segEnd; seg++) {
     const ox = seg * OFFICE_WIDTH;
 
-    // Windows
-    drawWindows(g, baseWindowPositions.map((p) => p + ox));
-
-    // Decorative plants
-    g.lineStyle(0);
-    drawPlant(g, ox + 30, OFFICE_HEIGHT - 30);
-    drawPlant(g, ox + OFFICE_WIDTH - 30, OFFICE_HEIGHT - 30);
-    drawPlant(g, ox + 30, 90);
-    drawPlant(g, ox + OFFICE_WIDTH - 30, 90);
+    if (shouldDrawTopBand(viewport)) {
+      drawSunflowerFrame(g, ox);
+      drawEntrance(g, ox);
+    }
+    if (shouldDrawBottomBand(viewport)) {
+      drawBottomWindowsBand(g, ox);
+    }
   }
 }
 
-function drawWindows(g: any, positions: number[]): void {
-  for (const wx of positions) {
-    // Window glow
-    g.beginFill(0x87ceeb, 0.2);
-    g.drawRect(wx - 5, 8, 70, 48);
-    g.endFill();
+function drawEntrance(g: any, offsetX: number): void {
+  const entranceX = offsetX + OFFICE_WIDTH / 2 - ENTRANCE_WIDTH / 2;
+  const entranceY = ENTRANCE_TOP_Y;
+  const doorBottomY = entranceY + ENTRANCE_HEIGHT;
 
-    // Window glass
-    g.beginFill(0x87ceeb, 0.6);
-    g.drawRect(wx, 12, 60, 40);
-    g.endFill();
+  // Wall trim line across with door gap:
+  // ----------------------|  유리문  |----------------------
+  const trimY = doorBottomY + 2;
+  g.lineStyle(2, WALL_BEIGE_TRIM, 1);
+  g.moveTo(offsetX, trimY);
+  g.lineTo(entranceX - 6, trimY);
+  g.moveTo(entranceX + ENTRANCE_WIDTH + 6, trimY);
+  g.lineTo(offsetX + OFFICE_WIDTH, trimY);
+  g.lineStyle(0);
 
-    // Window frame
-    g.lineStyle(3, 0x4a3a3a);
-    g.drawRect(wx, 12, 60, 40);
+  // Door outer frame shadow
+  g.beginFill(WALL_BEIGE_SHADOW, 0.55);
+  g.drawRect(entranceX - 2, entranceY - 2, ENTRANCE_WIDTH + 4, ENTRANCE_HEIGHT + 4);
+  g.endFill();
 
-    // Window cross
-    g.lineStyle(2, 0x4a3a3a);
-    g.moveTo(wx + 30, 12);
-    g.lineTo(wx + 30, 52);
-    g.moveTo(wx, 32);
-    g.lineTo(wx + 60, 32);
-  }
+  // Metal frame
+  g.beginFill(0x64748b, 0.9);
+  g.drawRect(entranceX, entranceY, ENTRANCE_WIDTH, ENTRANCE_HEIGHT);
+  g.endFill();
+
+  // Glass pane (inset)
+  const glassInset = 4;
+  const glassX = entranceX + glassInset;
+  const glassY = entranceY + glassInset;
+  const glassW = ENTRANCE_WIDTH - glassInset * 2;
+  const glassH = ENTRANCE_HEIGHT - glassInset * 2;
+
+  g.beginFill(0x93c5fd, 0.22);
+  g.drawRect(glassX, glassY, glassW, glassH);
+  g.endFill();
+
+  // Glass reflections
+  g.beginFill(0xffffff, 0.10);
+  g.drawRect(glassX + 6, glassY + 4, 3, glassH - 8);
+  g.drawRect(glassX + 14, glassY + 8, 2, glassH - 16);
+  g.endFill();
+
+  // Center mullion (two panels)
+  g.beginFill(0x334155, 0.7);
+  g.drawRect(entranceX + Math.floor(ENTRANCE_WIDTH / 2) - 1, entranceY + 2, 2, ENTRANCE_HEIGHT - 4);
+  g.endFill();
+
+  // Door handle (right)
+  g.beginFill(0xe2e8f0, 0.9);
+  g.drawRect(entranceX + ENTRANCE_WIDTH - 12, entranceY + Math.floor(ENTRANCE_HEIGHT / 2) - 6, 3, 12);
+  g.drawRect(entranceX + ENTRANCE_WIDTH - 16, entranceY + Math.floor(ENTRANCE_HEIGHT / 2) - 2, 7, 2);
+  g.endFill();
+
+  // Threshold
+  g.beginFill(0x111827, 0.22);
+  g.drawRect(entranceX - ENTRANCE_PADDING, doorBottomY + 4, ENTRANCE_WIDTH + ENTRANCE_PADDING * 2, 5);
+  g.endFill();
 }
 
-function drawPlant(g: any, x: number, y: number): void {
-  // Pot
-  g.beginFill(0x8b4513);
-  g.drawRect(x - 8, y - 5, 16, 12);
+function drawSunflowerFrame(g: any, offsetX: number): void {
+  // Place on the wall (left of the door)
+  const frameW = 34;
+  const frameH = 26;
+  const x = offsetX + OFFICE_WIDTH / 2 - ENTRANCE_WIDTH / 2 - 70;
+  const y = 18;
+
+  // Shadow
+  g.beginFill(0x000000, 0.12);
+  g.drawRect(x + 2, y + 2, frameW, frameH);
   g.endFill();
 
-  // Leaves
-  g.beginFill(0x228b22);
-  g.drawCircle(x - 4, y - 12, 6);
-  g.drawCircle(x + 4, y - 12, 6);
-  g.drawCircle(x, y - 16, 6);
+  // Frame
+  g.beginFill(0x7c4a1a, 0.95);
+  g.drawRect(x, y, frameW, frameH);
   g.endFill();
+
+  // Inner matte
+  g.beginFill(0xf8fafc, 0.85);
+  g.drawRect(x + 3, y + 3, frameW - 6, frameH - 6);
+  g.endFill();
+
+  // Sunflower (pixel-ish)
+  const cx = x + Math.floor(frameW / 2);
+  const cy = y + Math.floor(frameH / 2) + 1;
+
+  // Petals
+  g.beginFill(0xfacc15, 0.95);
+  g.drawCircle(cx - 6, cy - 2, 4);
+  g.drawCircle(cx + 6, cy - 2, 4);
+  g.drawCircle(cx, cy - 7, 4);
+  g.drawCircle(cx, cy + 3, 4);
+  g.endFill();
+
+  // Center
+  g.beginFill(0x7c2d12, 0.95);
+  g.drawCircle(cx, cy - 2, 4);
+  g.endFill();
+
+  // Stem + leaf
+  g.beginFill(0x22c55e, 0.7);
+  g.drawRect(cx - 1, cy + 2, 2, 6);
+  g.drawRect(cx - 5, cy + 5, 4, 2);
+  g.endFill();
+}
+
+function drawBottomWindowsBand(g: any, offsetX: number): void {
+  const bandY = OFFICE_HEIGHT - BOTTOM_WINDOW_BAND_MARGIN - BOTTOM_WINDOW_BAND_HEIGHT;
+
+  // Band backdrop (slightly darker)
+  g.lineStyle(0);
+  g.beginFill(0x0f172a, 0.12);
+  g.drawRect(offsetX, bandY, OFFICE_WIDTH, BOTTOM_WINDOW_BAND_HEIGHT);
+  g.endFill();
+
+  // Window panels
+  const windowCount = 4;
+  const gutter = 18;
+  const panelW = Math.floor((OFFICE_WIDTH - gutter * (windowCount + 1)) / windowCount);
+  const panelH = 44;
+  const panelY = bandY + Math.floor((BOTTOM_WINDOW_BAND_HEIGHT - panelH) / 2);
+
+  for (let i = 0; i < windowCount; i++) {
+    const x = offsetX + gutter + i * (panelW + gutter);
+
+    // Glow
+    g.beginFill(0x60a5fa, 0.12);
+    g.drawRect(x - 4, panelY - 4, panelW + 8, panelH + 8);
+    g.endFill();
+
+    // Glass
+    g.beginFill(0x93c5fd, 0.28);
+    g.drawRect(x, panelY, panelW, panelH);
+    g.endFill();
+
+    // Reflection stripes
+    g.beginFill(0xffffff, 0.10);
+    g.drawRect(x + 6, panelY + 6, 4, panelH - 12);
+    g.drawRect(x + 16, panelY + 10, 3, panelH - 20);
+    g.endFill();
+
+    // Frame
+    g.lineStyle(2, 0x334155, 0.7);
+    g.drawRect(x, panelY, panelW, panelH);
+    g.lineStyle(1, 0x334155, 0.5);
+    g.moveTo(x + Math.floor(panelW / 2), panelY);
+    g.lineTo(x + Math.floor(panelW / 2), panelY + panelH);
+  }
+
+  g.lineStyle(0);
 }
 
 interface DeskProps {
@@ -289,6 +501,39 @@ function drawDeskBase(g: any): void {
   g.beginFill(0x654321);
   g.drawRect(-45, 23, 90, 4);
   g.endFill();
+}
+
+const PARTITION_COLOR = 0xa3e635; // lime-ish
+const PARTITION_BORDER = 0x4d7c0f;
+
+interface HorizontalPartitionProps {
+  y: number;
+}
+
+function HorizontalPartition({ y }: HorizontalPartitionProps): JSX.Element {
+  const draw = useCallback((g: any) => {
+    g.clear();
+    const LEFT = 10;
+    const HEIGHT = 12;
+    const WIDTH = 400; // 책상 영역에 맞춤
+
+    // Shadow
+    g.beginFill(0x000000, 0.12);
+    g.drawRect(LEFT + 2, 2, WIDTH, HEIGHT);
+    g.endFill();
+
+    // Main bar
+    g.beginFill(PARTITION_COLOR, 0.95);
+    g.drawRect(LEFT, 0, WIDTH, HEIGHT);
+    g.endFill();
+
+    // Border
+    g.lineStyle(2, PARTITION_BORDER, 0.8);
+    g.drawRect(LEFT, 0, WIDTH, HEIGHT);
+    g.lineStyle(0);
+  }, []);
+
+  return <Graphics draw={draw} y={y} />;
 }
 
 function drawMonitorFrame(g: any): void {
@@ -1140,7 +1385,7 @@ export function OfficeCanvas(): JSX.Element {
 
       for (const agent of Object.values(agents)) {
         const id = agent.id;
-        const target = { x: agent.desk_position[0], y: agent.desk_position[1] - 55 };
+        const target = getAgentPosition(id); // DESK_CONFIGS 사용
         const wantsVisible = agent.status !== "idle" || Boolean(vacationById[id]);
         const current = next[id];
 
@@ -1247,6 +1492,8 @@ export function OfficeCanvas(): JSX.Element {
       >
         <Container x={offsetX} y={offsetY} scale={scale}>
           <OfficeBackground viewport={viewport} />
+          <HorizontalPartition y={70} />
+          <HorizontalPartition y={420} />
           {DESK_CONFIGS.map((desk) => {
             const agent = agents[desk.id];
             const agentStatus: AgentStatus = agent?.status ?? "idle";
@@ -1264,7 +1511,7 @@ export function OfficeCanvas(): JSX.Element {
             );
           })}
           {visibleAgents.map((agent) => {
-            const target = { x: agent.desk_position[0], y: agent.desk_position[1] - 55 };
+            const target = getAgentPosition(agent.id); // DESK_CONFIGS 사용
             const motion = motionById[agent.id];
             const state = motion ? computeMotionState(motion, nowRef.current) : { x: target.x, y: target.y, alpha: 1 };
 
@@ -1291,13 +1538,15 @@ export function OfficeCanvas(): JSX.Element {
             );
           })}
           {/* HUD overlay on top of wall */}
-          <HudDisplay
-            toolCallCount={hudMetrics.toolCallCount}
-            avgToolResponseMs={hudMetrics.avgToolResponseMs}
-            errorCount={hudMetrics.errorCount}
-            agentSwitchCount={hudMetrics.agentSwitchCount}
-            rateLimitActive={hudMetrics.rateLimitActive}
-          />
+          {SHOW_HUD && (
+            <HudDisplay
+              toolCallCount={hudMetrics.toolCallCount}
+              avgToolResponseMs={hudMetrics.avgToolResponseMs}
+              errorCount={hudMetrics.errorCount}
+              agentSwitchCount={hudMetrics.agentSwitchCount}
+              rateLimitActive={hudMetrics.rateLimitActive}
+            />
+          )}
         </Container>
       </Stage>
     </div>
