@@ -15,10 +15,12 @@ type ViewportRect = { x: number; y: number; width: number; height: number };
 
 // Top band / entrance configuration
 const WALL_HEIGHT = 70;
-const ENTRANCE_WIDTH = 88;
+const ENTRANCE_WIDTH = 156;
 const ENTRANCE_HEIGHT = 48;
 const ENTRANCE_TOP_Y = 10;
 const ENTRANCE_PADDING = 6;
+
+const SUNFLOWER_FRAME_X = 320;
 
 // Wall (beige) palette
 const WALL_BEIGE_BASE = 0xe7d8bf;
@@ -336,7 +338,7 @@ function drawSunflowerFrame(g: any, offsetX: number): void {
   // Place on the wall (left of the door)
   const frameW = 34;
   const frameH = 26;
-  const x = offsetX + OFFICE_WIDTH / 2 - ENTRANCE_WIDTH / 2 - 70;
+  const x = offsetX + OFFICE_WIDTH / 2 - ENTRANCE_WIDTH / 2 - SUNFLOWER_FRAME_X;
   const y = 18;
 
   // Shadow
