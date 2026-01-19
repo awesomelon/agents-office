@@ -83,7 +83,7 @@ function getAgentLabelKo(agentType: AgentType): string {
     researcher: "리서처",
     coder: "코더",
     reviewer: "리뷰어",
-    artist: "아티스트",
+    manager: "매니저",
   };
   return label[agentType] ?? "에이전트";
 }
@@ -186,14 +186,14 @@ function extractTarget(rawTask: string): string | null {
 }
 
 function extractTargetAgent(rawTask: string): string | null {
-  const agentMatch = rawTask.match(/to\s+(researcher|coder|reviewer|artist)/i);
+  const agentMatch = rawTask.match(/to\s+(researcher|coder|reviewer|manager)/i);
   if (!agentMatch) return null;
 
   const label: Record<string, string> = {
     researcher: "리서처",
     coder: "코더",
     reviewer: "리뷰어",
-    artist: "아티스트",
+    manager: "매니저",
   };
 
   const key = agentMatch[1].toLowerCase();

@@ -8,26 +8,29 @@ function isTauriEnv(): boolean {
   return typeof window !== "undefined" && "__TAURI__" in window;
 }
 
-export function useTauriEvents() {
-  const { updateAgent, setAgentVacation } = useAgentStore();
+export function useTauriEvents(): void {
+  const { updateAgent, setAgentVacation, startDocumentTransfer, setLastActiveAgent } = useAgentStore();
   const { addLog, setSessionId, setWatcherStatus } = useLogStore();
   const lastActiveAgentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // 브라우저 환경에서는 Tauri 이벤트 구독하지 않음
     if (!isTauriEnv()) {
       console.log("[useTauriEvents] Not in Tauri environment, skipping event listener");
       return;
     }
 
-    // Listen for app events from Tauri
     const unlisten = listen<AppEvent>("app-event", (event) => {
       const appEvent = event.payload;
 
       switch (appEvent.type) {
         case "LogEntry":
-          addLog(appEvent.payload);
-          handleVacationFlag(appEvent.payload, setAgentVacation, lastActiveAgentIdRef);
+          handleLogEntry(appEvent.payload, {
+            addLog,
+            setAgentVacation,
+            startDocumentTransfer,
+            setLastActiveAgent,
+            lastActiveAgentIdRef,
+          });
           break;
 
         case "AgentUpdate":
@@ -51,7 +54,7 @@ export function useTauriEvents() {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [updateAgent, addLog, setSessionId, setWatcherStatus, setAgentVacation]);
+  }, [updateAgent, addLog, setSessionId, setWatcherStatus, setAgentVacation, startDocumentTransfer, setLastActiveAgent]);
 }
 
 const LIMIT_REACHED_PATTERNS: RegExp[] = [
@@ -71,29 +74,44 @@ function isLimitReachedMessage(content: string): boolean {
   return LIMIT_REACHED_PATTERNS.some((re) => re.test(content));
 }
 
-function handleVacationFlag(
-  entry: LogEntry,
-  setAgentVacation: (id: string, on: boolean) => void,
-  lastActiveAgentIdRef: { current: string | null },
-): void {
-  const inferred = inferAgentId(entry);
-  if (inferred) {
-    // Track last active agent so we can attribute error logs without tool_name.
-    lastActiveAgentIdRef.current = inferred;
+interface LogEntryHandlers {
+  addLog: (entry: LogEntry) => void;
+  setAgentVacation: (id: string, on: boolean) => void;
+  startDocumentTransfer: (fromAgentId: string, toAgentId: string) => void;
+  setLastActiveAgent: (id: string) => void;
+  lastActiveAgentIdRef: { current: string | null };
+}
+
+function handleLogEntry(entry: LogEntry, handlers: LogEntryHandlers): void {
+  const { addLog, setAgentVacation, startDocumentTransfer, setLastActiveAgent, lastActiveAgentIdRef } = handlers;
+
+  addLog(entry);
+
+  const inferredAgentId = inferAgentId(entry);
+  const agentId = inferredAgentId ?? lastActiveAgentIdRef.current;
+
+  // Handle vacation flag
+  if (agentId) {
+    if (isLimitReachedMessage(entry.content)) {
+      setAgentVacation(agentId, true);
+    } else if (entry.entry_type === "tool_call" || entry.entry_type === "tool_result") {
+      setAgentVacation(agentId, false);
+    }
   }
 
-  const agentId = inferred ?? lastActiveAgentIdRef.current;
-  if (!agentId) return;
+  // Handle document transfer (only on tool_call with valid agent)
+  if (entry.entry_type === "tool_call" && inferredAgentId) {
+    const previousAgentId = lastActiveAgentIdRef.current;
 
-  // Turn on when limit reached, and auto-clear on the next normal activity from the same agent.
-  if (isLimitReachedMessage(entry.content)) {
-    setAgentVacation(agentId, true);
-    return;
-  }
+    if (previousAgentId && previousAgentId !== inferredAgentId) {
+      startDocumentTransfer(previousAgentId, inferredAgentId);
+    }
 
-  // Don't clear on noisy debug logs; clear when the agent resumes a real action.
-  if (entry.entry_type === "tool_call" || entry.entry_type === "tool_result") {
-    setAgentVacation(agentId, false);
+    lastActiveAgentIdRef.current = inferredAgentId;
+    setLastActiveAgent(inferredAgentId);
+  } else if (inferredAgentId) {
+    // Track last active agent for error attribution
+    lastActiveAgentIdRef.current = inferredAgentId;
   }
 }
 
@@ -101,32 +119,32 @@ function inferAgentId(entry: LogEntry): string | null {
   const explicit = entry.agent_id?.trim();
   if (explicit) return explicit;
 
-  const tool = entry.tool_name?.trim();
-  if (tool) {
-    const t = tool.toLowerCase();
+  const tool = entry.tool_name?.trim()?.toLowerCase();
+  if (!tool) return null;
 
-    if (t === "read" || t === "glob" || t === "grep" || t === "websearch" || t === "webfetch") {
-      return "researcher";
-    }
+  // Research tools
+  if (tool === "read" || tool === "glob" || tool === "grep" || tool === "websearch" || tool === "webfetch") {
+    return "researcher";
+  }
 
-    if (t === "write" || t === "edit" || t === "notebookedit" || t === "editnotebook") {
-      return "coder";
-    }
-
-    if (t === "bash") {
-      const c = entry.content.toLowerCase();
-      if (c.includes("git") || c.includes("test") || c.includes("npm") || c.includes("pnpm")) {
-        return "reviewer";
-      }
-      return "coder";
-    }
-
-    if (t === "todowrite" || t === "task") {
-      return "artist";
-    }
-
+  // Edit/Write tools
+  if (tool === "write" || tool === "edit" || tool === "notebookedit" || tool === "editnotebook") {
     return "coder";
   }
 
-  return null;
+  // Bash - context-dependent
+  if (tool === "bash") {
+    const content = entry.content.toLowerCase();
+    if (content.includes("git") || content.includes("test") || content.includes("npm") || content.includes("pnpm")) {
+      return "reviewer";
+    }
+    return "coder";
+  }
+
+  // Task management tools
+  if (tool === "todowrite" || tool === "task") {
+    return "manager";
+  }
+
+  return "coder";
 }

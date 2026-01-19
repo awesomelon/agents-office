@@ -1,9 +1,9 @@
 import { Stage, Container, Graphics, Text } from "@pixi/react";
 import { useCallback, useState, useEffect, useMemo } from "react";
 import { TextStyle } from "pixi.js";
-import { useAgentStore } from "../../store";
+import { useAgentStore, type DocumentTransfer } from "../../store";
 import { DESK_CONFIGS, AGENT_COLORS, STATUS_COLORS } from "../../types";
-import type { Agent, AgentType } from "../../types";
+import type { Agent, AgentType, AgentStatus } from "../../types";
 import { formatAgentMessage } from "../../utils";
 
 // Canvas dimensions
@@ -21,11 +21,10 @@ const WALL_HEIGHT = 65;
 // Animation timing
 const ANIMATION_INTERVAL_MS = 250;
 
-// Entry/exit motion
-const ENTRY_EXIT_START_X = OFFICE_WIDTH / 2;
-const ENTRY_EXIT_START_Y = OFFICE_HEIGHT + 60;
+// Entry motion
+const ENTRY_START_X = OFFICE_WIDTH / 2;
+const ENTRY_START_Y = OFFICE_HEIGHT + 60;
 const ENTER_DURATION_MS = 700;
-const EXIT_DURATION_MS = 500;
 
 // Text limits
 const SPEECH_BUBBLE_MAX_CHARS = 45;
@@ -38,7 +37,11 @@ const VACATION_SIGN_HEIGHT = 18;
 const DESK_VACATION_SIGN_X = 0;
 const DESK_VACATION_SIGN_Y = 34;
 
-type MotionPhase = "absent" | "entering" | "present" | "exiting";
+// Document transfer animation
+const DOCUMENT_TRANSFER_DURATION_MS = 600;
+const DOCUMENT_SIZE = 16;
+
+type MotionPhase = "absent" | "entering" | "present";
 
 interface AgentMotion {
   phase: MotionPhase;
@@ -65,7 +68,7 @@ const HAIR_COLORS: Record<AgentType, number> = {
   researcher: 0x4a3728, // Brown
   coder: 0x2a2a3a, // Dark
   reviewer: 0x8b6914, // Blonde
-  artist: 0x8b2252, // Reddish
+  manager: 0x8b2252, // Reddish
 };
 
 function OfficeBackground(): JSX.Element {
@@ -166,6 +169,8 @@ interface DeskProps {
   y: number;
   label: string;
   showVacation: boolean;
+  agentStatus: AgentStatus;
+  agentType: AgentType;
 }
 
 const DESK_LABEL_STYLE = new TextStyle({
@@ -178,11 +183,11 @@ const DESK_LABEL_STYLE = new TextStyle({
   dropShadowDistance: 1,
 });
 
-function Desk({ x, y, label, showVacation }: DeskProps): JSX.Element {
+function Desk({ x, y, label, showVacation, agentStatus, agentType }: DeskProps): JSX.Element {
   const draw = useCallback((g: any) => {
     g.clear();
     drawDeskBase(g);
-    drawMonitor(g);
+    drawMonitorFrame(g);
     drawKeyboard(g);
     drawDeskItems(g);
   }, []);
@@ -190,6 +195,7 @@ function Desk({ x, y, label, showVacation }: DeskProps): JSX.Element {
   return (
     <Container x={x} y={y}>
       <Graphics draw={draw} />
+      <MonitorScreen status={agentStatus} agentType={agentType} />
       {showVacation && (
         <Container x={DESK_VACATION_SIGN_X} y={DESK_VACATION_SIGN_Y}>
           <VacationSign />
@@ -228,26 +234,165 @@ function drawDeskBase(g: any): void {
   g.endFill();
 }
 
-function drawMonitor(g: any): void {
-  // Back
+function drawMonitorFrame(g: any): void {
+  // Back/frame
   g.beginFill(0x2a2a2a);
   g.drawRect(-18, -25, 36, 24);
-  g.endFill();
-
-  // Screen
-  g.beginFill(0x1a3a4a);
-  g.drawRect(-16, -23, 32, 18);
-  g.endFill();
-
-  // Screen glow
-  g.beginFill(0x2a5a7a, 0.5);
-  g.drawRect(-14, -21, 28, 14);
   g.endFill();
 
   // Stand
   g.beginFill(0x2a2a2a);
   g.drawRect(-4, -3, 8, 6);
   g.endFill();
+}
+
+interface MonitorScreenProps {
+  status: AgentStatus;
+  agentType: AgentType;
+}
+
+function MonitorScreen({ status, agentType }: MonitorScreenProps): JSX.Element {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    if (status === "idle") return;
+
+    const interval = setInterval(() => {
+      setFrame((f) => (f + 1) % 8);
+    }, 150);
+
+    return () => clearInterval(interval);
+  }, [status]);
+
+  const draw = useCallback((g: any) => {
+    g.clear();
+
+    const screenColor = getScreenColor(status);
+    g.beginFill(screenColor);
+    g.drawRect(-16, -23, 32, 18);
+    g.endFill();
+
+    switch (status) {
+      case "idle":
+        drawIdleScreen(g);
+        break;
+      case "working":
+        drawWorkingScreen(g, agentType, frame);
+        break;
+      case "thinking":
+        drawThinkingScreen(g, frame);
+        break;
+      case "passing":
+        drawPassingScreen(g, frame);
+        break;
+      case "error":
+        drawErrorScreen(g, frame);
+        break;
+    }
+  }, [status, agentType, frame]);
+
+  return <Graphics draw={draw} />;
+}
+
+function getScreenColor(status: AgentStatus): number {
+  switch (status) {
+    case "idle": return 0x1a2a3a;
+    case "working": return 0x0a2a1a;
+    case "thinking": return 0x1a1a3a;
+    case "passing": return 0x2a1a3a;
+    case "error": return 0x3a1a1a;
+    default: return 0x1a2a3a;
+  }
+}
+
+function drawIdleScreen(g: any): void {
+  // Dim screen with scanlines
+  g.beginFill(0x2a3a4a, 0.3);
+  for (let y = -22; y < -5; y += 2) {
+    g.drawRect(-15, y, 30, 1);
+  }
+  g.endFill();
+}
+
+function drawWorkingScreen(g: any, agentType: AgentType, frame: number): void {
+  // Code lines scrolling animation
+  const lineColor = AGENT_COLORS[agentType];
+
+  for (let i = 0; i < 5; i++) {
+    const yOffset = ((i + frame) % 5) * 3;
+    const width = 8 + ((i * 7 + frame) % 12);
+    const xOffset = (i % 2) * 4;
+
+    g.beginFill(lineColor, 0.7);
+    g.drawRect(-14 + xOffset, -21 + yOffset, width, 2);
+    g.endFill();
+  }
+
+  // Cursor blink
+  if (frame % 2 === 0) {
+    g.beginFill(0xffffff, 0.8);
+    g.drawRect(10, -9, 2, 3);
+    g.endFill();
+  }
+}
+
+function drawThinkingScreen(g: any, frame: number): void {
+  // Loading dots animation
+  const dotCount = 3;
+  const activeIndex = frame % dotCount;
+
+  for (let i = 0; i < dotCount; i++) {
+    const alpha = i === activeIndex ? 1 : 0.3;
+    g.beginFill(0x6090ff, alpha);
+    g.drawCircle(-6 + i * 6, -14, 2);
+    g.endFill();
+  }
+
+  // Brain/gear icon
+  g.beginFill(0x8090ff, 0.6);
+  g.drawCircle(0, -14, 4);
+  g.beginFill(0x4060ff, 0.4);
+  g.drawCircle(0, -14, 2);
+  g.endFill();
+}
+
+function drawPassingScreen(g: any, frame: number): void {
+  // Arrow animation moving right
+  const arrowX = -10 + (frame % 4) * 5;
+
+  g.beginFill(0xa060ff, 0.8);
+  // Arrow body
+  g.drawRect(arrowX, -15, 8, 4);
+  // Arrow head
+  g.moveTo(arrowX + 8, -17);
+  g.lineTo(arrowX + 12, -13);
+  g.lineTo(arrowX + 8, -9);
+  g.closePath();
+  g.endFill();
+
+  // Transfer icon
+  g.beginFill(0xffffff, 0.5);
+  g.drawRect(-12, -10, 6, 4);
+  g.drawRect(6, -10, 6, 4);
+  g.endFill();
+}
+
+function drawErrorScreen(g: any, frame: number): void {
+  // Flashing warning
+  const flash = frame % 2 === 0;
+
+  if (flash) {
+    g.beginFill(0xff4040, 0.3);
+    g.drawRect(-15, -22, 30, 16);
+    g.endFill();
+  }
+
+  // Error X mark
+  g.lineStyle(2, 0xff6060, 0.9);
+  g.moveTo(-6, -18);
+  g.lineTo(6, -10);
+  g.moveTo(6, -18);
+  g.lineTo(-6, -10);
 }
 
 function drawKeyboard(g: any): void {
@@ -516,6 +661,80 @@ function drawStatusIndicator(g: any, bounce: number, statusColor: number, isErro
   }
 }
 
+interface FlyingDocumentProps {
+  transfer: DocumentTransfer;
+  now: number;
+  onComplete: () => void;
+}
+
+function getAgentPosition(agentId: string): { x: number; y: number } {
+  const desk = DESK_CONFIGS.find((d) => d.id === agentId);
+  if (!desk) return { x: OFFICE_WIDTH / 2, y: OFFICE_HEIGHT / 2 };
+  return { x: desk.position[0], y: desk.position[1] - 55 }; // Agent position above desk
+}
+
+const DOCUMENT_ARC_HEIGHT = 60;
+
+function drawDocument(g: any): void {
+  g.clear();
+
+  // Document shadow
+  g.beginFill(0x000000, 0.2);
+  g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.7 + 2, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
+  g.endFill();
+
+  // Document paper
+  g.beginFill(0xffffff);
+  g.drawRect(-DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
+  g.endFill();
+
+  // Document lines (text)
+  g.beginFill(0x4a4a6a, 0.6);
+  g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.5, DOCUMENT_SIZE - 4, 2);
+  g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.3, DOCUMENT_SIZE - 6, 2);
+  g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.1, DOCUMENT_SIZE - 5, 2);
+  g.drawRect(-DOCUMENT_SIZE / 2 + 2, DOCUMENT_SIZE * 0.1, DOCUMENT_SIZE - 7, 2);
+  g.endFill();
+
+  // Fold corner
+  g.beginFill(0xe0e0e0);
+  g.moveTo(DOCUMENT_SIZE / 2 - 4, -DOCUMENT_SIZE * 0.7);
+  g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7 + 4);
+  g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7);
+  g.closePath();
+  g.endFill();
+}
+
+function FlyingDocument({ transfer, now, onComplete }: FlyingDocumentProps): JSX.Element | null {
+  const progress = clamp01((now - transfer.startedAt) / DOCUMENT_TRANSFER_DURATION_MS);
+
+  useEffect(() => {
+    if (progress >= 1) {
+      onComplete();
+    }
+  }, [progress, onComplete]);
+
+  if (progress >= 1) return null;
+
+  const eased = easeOutCubic(progress);
+  const from = getAgentPosition(transfer.fromAgentId);
+  const to = getAgentPosition(transfer.toAgentId);
+
+  // Arc trajectory
+  const x = lerp(from.x, to.x, eased);
+  const baseY = lerp(from.y, to.y, eased);
+  const y = baseY - Math.sin(progress * Math.PI) * DOCUMENT_ARC_HEIGHT;
+
+  const rotation = progress * Math.PI * 2;
+  const scale = 1 + Math.sin(progress * Math.PI) * 0.3;
+
+  return (
+    <Container x={x} y={y} rotation={rotation} scale={scale}>
+      <Graphics draw={drawDocument} />
+    </Container>
+  );
+}
+
 interface SpeechBubbleProps {
   text: string;
 }
@@ -578,9 +797,16 @@ function SpeechBubble({ text }: SpeechBubbleProps): JSX.Element {
   );
 }
 
+// Timeout for speech bubble disappearance (ms)
+const SPEECH_BUBBLE_TIMEOUT_MS = 5000;
+const SPEECH_BUBBLE_CHECK_INTERVAL_MS = 1000;
+
 export function OfficeCanvas(): JSX.Element {
   const agents = useAgentStore((state) => state.agents);
   const vacationById = useAgentStore((state) => state.vacationById);
+  const documentTransfer = useAgentStore((state) => state.documentTransfer);
+  const clearDocumentTransfer = useAgentStore((state) => state.clearDocumentTransfer);
+  const clearExpiredTasks = useAgentStore((state) => state.clearExpiredTasks);
   const [dimensions, setDimensions] = useState({ width: OFFICE_WIDTH, height: OFFICE_HEIGHT });
   const [now, setNow] = useState(() => performance.now());
   const [motionById, setMotionById] = useState<Record<string, AgentMotion>>({});
@@ -596,10 +822,18 @@ export function OfficeCanvas(): JSX.Element {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // Start transitions when agent status changes (idle <-> non-idle).
+  // Clear speech bubbles after timeout
+  useEffect(() => {
+    const interval = setInterval(() => {
+      clearExpiredTasks(SPEECH_BUBBLE_TIMEOUT_MS);
+    }, SPEECH_BUBBLE_CHECK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [clearExpiredTasks]);
+
+  // Start entering transition when agent becomes visible, or set absent when hidden.
   useEffect(() => {
     const ts = now;
-    const start = { x: ENTRY_EXIT_START_X, y: ENTRY_EXIT_START_Y };
+    const start = { x: ENTRY_START_X, y: ENTRY_START_Y };
 
     setMotionById((prev) => {
       const next: Record<string, AgentMotion> = { ...prev };
@@ -612,31 +846,24 @@ export function OfficeCanvas(): JSX.Element {
 
         const currentPhase: MotionPhase = current?.phase ?? "absent";
         if (wantsVisible) {
-          if (currentPhase === "absent" || currentPhase === "exiting") {
-            const fromState = currentPhase === "exiting"
-              ? computeMotionState(current, ts)
-              : { x: start.x, y: start.y, alpha: 0 };
-
+          if (currentPhase === "absent") {
             next[id] = {
               phase: "entering",
               startedAt: ts,
               durationMs: ENTER_DURATION_MS,
-              from: { x: fromState.x, y: fromState.y, alpha: fromState.alpha },
+              from: { x: start.x, y: start.y, alpha: 0 },
               to: { x: target.x, y: target.y, alpha: 1 },
             };
           }
         } else {
-          if (currentPhase === "present" || currentPhase === "entering") {
-            const fromState = currentPhase === "entering"
-              ? computeMotionState(current, ts)
-              : { x: target.x, y: target.y, alpha: 1 };
-
+          // Instantly hide when no longer visible (no exit animation)
+          if (currentPhase !== "absent") {
             next[id] = {
-              phase: "exiting",
+              phase: "absent",
               startedAt: ts,
-              durationMs: EXIT_DURATION_MS,
-              from: { x: fromState.x, y: fromState.y, alpha: fromState.alpha },
-              to: { x: start.x, y: start.y, alpha: 0 },
+              durationMs: 0,
+              from: { x: target.x, y: target.y, alpha: 0 },
+              to: { x: target.x, y: target.y, alpha: 0 },
             };
           }
         }
@@ -646,7 +873,7 @@ export function OfficeCanvas(): JSX.Element {
     });
   }, [agents, now, vacationById]);
 
-  // Finalize motions (entering->present, exiting->absent).
+  // Finalize entering motion (entering->present).
   useEffect(() => {
     const ts = now;
     setMotionById((prev) => {
@@ -654,17 +881,13 @@ export function OfficeCanvas(): JSX.Element {
       const next: Record<string, AgentMotion> = { ...prev };
 
       for (const [id, motion] of Object.entries(prev)) {
-        if (motion.phase !== "entering" && motion.phase !== "exiting") continue;
+        if (motion.phase !== "entering") continue;
 
         const progress = (ts - motion.startedAt) / motion.durationMs;
         if (progress < 1) continue;
 
         changed = true;
-        if (motion.phase === "entering") {
-          next[id] = { ...motion, phase: "present" };
-        } else {
-          next[id] = { ...motion, phase: "absent" };
-        }
+        next[id] = { ...motion, phase: "present" };
       }
 
       return changed ? next : prev;
@@ -714,15 +937,21 @@ export function OfficeCanvas(): JSX.Element {
       >
         <Container x={offsetX} y={offsetY} scale={scale}>
           <OfficeBackground />
-          {DESK_CONFIGS.map((desk) => (
-            <Desk
-              key={desk.id}
-              x={desk.position[0]}
-              y={desk.position[1]}
-              label={desk.label}
-              showVacation={Boolean(vacationById[desk.id])}
-            />
-          ))}
+          {DESK_CONFIGS.map((desk) => {
+            const agent = agents[desk.id];
+            const agentStatus: AgentStatus = agent?.status ?? "idle";
+            return (
+              <Desk
+                key={desk.id}
+                x={desk.position[0]}
+                y={desk.position[1]}
+                label={desk.label}
+                showVacation={Boolean(vacationById[desk.id])}
+                agentStatus={agentStatus}
+                agentType={desk.agentType}
+              />
+            );
+          })}
           {visibleAgents.map((agent) => {
             const target = { x: agent.desk_position[0], y: agent.desk_position[1] - 55 };
             const motion = motionById[agent.id];
@@ -738,6 +967,13 @@ export function OfficeCanvas(): JSX.Element {
               />
             );
           })}
+          {documentTransfer && (
+            <FlyingDocument
+              transfer={documentTransfer}
+              now={now}
+              onComplete={clearDocumentTransfer}
+            />
+          )}
         </Container>
       </Stage>
     </div>

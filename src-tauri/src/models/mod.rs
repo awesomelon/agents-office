@@ -7,7 +7,7 @@ pub enum AgentType {
     Researcher,
     Coder,
     Reviewer,
-    Artist,
+    Manager,
 }
 
 impl Default for AgentType {

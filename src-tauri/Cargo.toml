@@ -1,8 +1,8 @@
 [package]
 name = "agents-office"
-version = "0.1.0"
+version = "0.1.1"
 description = "Claude Code visualization as agents working in an office"
-authors = ["you"]
+authors = ["j-ho"]
 edition = "2021"
 
 [lib]

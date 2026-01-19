@@ -1,4 +1,4 @@
-export type AgentType = "researcher" | "coder" | "reviewer" | "artist";
+export type AgentType = "researcher" | "coder" | "reviewer" | "manager";
 
 export type AgentStatus = "idle" | "working" | "thinking" | "passing" | "error";
 
@@ -45,14 +45,14 @@ export const DESK_CONFIGS: DeskConfig[] = [
   { id: "researcher", position: [180, 160], agentType: "researcher", label: "Researcher" },
   { id: "coder", position: [520, 160], agentType: "coder", label: "Coder" },
   { id: "reviewer", position: [180, 360], agentType: "reviewer", label: "Reviewer" },
-  { id: "artist", position: [520, 360], agentType: "artist", label: "Artist" },
+  { id: "manager", position: [520, 360], agentType: "manager", label: "Manager" },
 ];
 
 export const AGENT_COLORS: Record<AgentType, number> = {
   researcher: 0x60a5fa, // blue
   coder: 0x4ade80, // green
   reviewer: 0xfbbf24, // yellow
-  artist: 0xf472b6, // pink
+  manager: 0xf472b6, // pink
 };
 
 export const STATUS_COLORS: Record<AgentStatus, number> = {

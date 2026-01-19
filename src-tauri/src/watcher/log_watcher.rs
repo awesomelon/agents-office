@@ -193,6 +193,6 @@ fn get_desk_position(agent_type: crate::models::AgentType) -> (f32, f32) {
         AgentType::Researcher => (180.0, 160.0),
         AgentType::Coder => (520.0, 160.0),
         AgentType::Reviewer => (180.0, 360.0),
-        AgentType::Artist => (520.0, 360.0),
+        AgentType::Manager => (520.0, 360.0),
     }
 }

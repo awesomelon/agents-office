@@ -47,14 +47,21 @@ cd src-tauri && cargo build
 - **models/mod.rs**: `Agent`, `LogEntry`, `AppEvent` 타입 정의
 
 ### Frontend (src/)
-- **components/office/OfficeCanvas.tsx**: PixiJS 기반 2x2 사무실 렌더링 (상단에 상수 정의)
-- **hooks/useTauriEvents.ts**: `listen("app-event")`로 Tauri 이벤트 구독
-- **store/agentStore.ts, logStore.ts**: Zustand 상태 관리
+- **components/office/OfficeCanvas.tsx**: PixiJS 기반 2x2 사무실 렌더링
+  - `FlyingDocument`: 에이전트 간 서류 전달 애니메이션 (포물선 궤적, 회전)
+  - `MonitorScreen`: 에이전트 상태별 모니터 화면 동적 변화
+  - `AgentSprite`: 에이전트 캐릭터 렌더링 및 바운스 애니메이션
+- **hooks/useTauriEvents.ts**: `listen("app-event")`로 Tauri 이벤트 구독, 에이전트 전환 감지
+- **store/agentStore.ts**: Zustand 상태 관리
+  - `documentTransfer`: 서류 전달 애니메이션 상태 (fromAgentId, toAgentId, startedAt)
+  - `lastActiveAgentId`: 마지막 활성 에이전트 추적 (서류 전달 트리거용)
+  - `lastTaskUpdateById`: 에이전트별 마지막 task 업데이트 시간 (말풍선 타임아웃용)
+- **store/logStore.ts**: 로그 엔트리 관리
 - **types/index.ts**: 타입 정의, `DESK_CONFIGS` (2x2 그리드 배치), `AGENT_COLORS`
 
 ### Type Synchronization (중요)
 Rust와 TypeScript 타입은 수동 동기화 필요:
-- `AgentType`: researcher, coder, reviewer, artist
+- `AgentType`: researcher, coder, reviewer, manager
 - `AgentStatus`: idle, working, thinking, passing, error
 - `LogEntryType`: tool_call, tool_result, message, error, todo_update, session_start, session_end
 
@@ -76,12 +83,34 @@ function isTauriEnv(): boolean {
 - Read/Glob/Grep → Researcher (파란색)
 - Edit/Write → Coder (초록색)
 - Bash → Reviewer (노란색)
-- TodoWrite → Artist (분홍색)
+- TodoWrite/Task → Manager (분홍색)
 
 ### Office Layout
 2x2 그리드 배치 (`DESK_CONFIGS` in types/index.ts):
 ```
 Researcher | Coder
 -----------+--------
-Reviewer   | Artist
+Reviewer   | Manager
 ```
+
+### Document Transfer Animation
+에이전트 간 업무 전환을 서류 전달로 시각화:
+1. `useTauriEvents.ts`의 `handleDocumentTransfer()`가 tool_call 이벤트에서 에이전트 변경 감지
+2. `agentStore.startDocumentTransfer(fromId, toId)` 호출
+3. `OfficeCanvas`의 `FlyingDocument` 컴포넌트가 600ms 동안 포물선 애니메이션 렌더링
+4. 완료 시 `clearDocumentTransfer()` 자동 호출
+
+### Monitor Screen States
+`MonitorScreen` 컴포넌트가 에이전트 상태별 화면 표시:
+- **idle**: 어두운 화면 + 스캔라인
+- **working**: 에이전트 색상의 코드 라인 스크롤 + 커서 깜빡임
+- **thinking**: 로딩 점 3개 순차 깜빡임
+- **passing**: 화살표 오른쪽 이동 애니메이션
+- **error**: 빨간 배경 깜빡임 + X 마크
+
+### Agent Motion
+- **입장 모션**: 에이전트가 활성화되면 화면 하단에서 책상 위치로 700ms 동안 이동
+- **퇴장 모션**: 없음 (즉시 사라짐)
+
+### Speech Bubble Timeout
+`OfficeCanvas`에서 `clearExpiredTasks()`를 1초마다 호출하여 5초 이상 업데이트 없는 에이전트의 말풍선을 자동으로 숨김. 타임아웃 값은 `SPEECH_BUBBLE_TIMEOUT_MS` 상수로 조절.

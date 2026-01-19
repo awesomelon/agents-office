@@ -1,8 +1,9 @@
 {
-  "name": "agents-office",
-  "version": "0.1.0",
+  "name": "@j-ho/agents-office",
+  "version": "0.1.1",
   "description": "Claude Code visualization as agents working in an office",
   "license": "MIT",
+  "author": "j-ho",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/awesomelon/agents-office.git"

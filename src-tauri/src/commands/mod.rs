@@ -19,6 +19,6 @@ pub fn get_agents() -> Vec<Agent> {
         ),
         Agent::new("coder".to_string(), AgentType::Coder, (520.0, 160.0)),
         Agent::new("reviewer".to_string(), AgentType::Reviewer, (180.0, 360.0)),
-        Agent::new("artist".to_string(), AgentType::Artist, (520.0, 360.0)),
+        Agent::new("manager".to_string(), AgentType::Manager, (520.0, 360.0)),
     ]
 }

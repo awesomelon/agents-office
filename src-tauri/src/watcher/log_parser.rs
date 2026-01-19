@@ -103,7 +103,7 @@ pub fn determine_agent_type(entry: &LogEntry) -> AgentType {
                     AgentType::Coder
                 }
             }
-            "todowrite" | "task" => AgentType::Artist,
+            "todowrite" | "task" => AgentType::Manager,
             _ => AgentType::Coder,
         }
     } else if entry.entry_type == LogEntryType::Error {
