@@ -59,7 +59,7 @@ cd src-tauri && cargo test
 - **models/mod.rs**: `Agent`, `LogEntry`, `AppEvent` 타입 정의
 
 ### Frontend (src/)
-- **components/office/OfficeCanvas.tsx**: PixiJS 기반 사무실 렌더링 (900x700 캔버스)
+- **components/office/OfficeCanvas.tsx**: PixiJS 기반 사무실 렌더링 (550x700 캔버스)
   - `FlyingDocument`: 에이전트 간 서류 전달 애니메이션 (포물선 궤적, 회전)
   - `MonitorScreen`: 에이전트 상태별 모니터 화면 동적 변화
   - `AgentSprite`: 에이전트 캐릭터 렌더링 및 바운스 애니메이션
@@ -110,7 +110,7 @@ function isTauriEnv(): boolean {
 - AskUserQuestion/Error → Support (보라색 0xa78bfa)
 
 ### Office Layout
-3-3-2 세로 배치 (`DESK_CONFIGS` in types/index.ts, 900x700 캔버스, 좌측 정렬):
+3-3-2 세로 배치 (`DESK_CONFIGS` in types/index.ts, 550x700 캔버스, 좌측 정렬):
 ```
 ┌─────────────────────────────────────────────┐ Y=0
 │              (벽 영역 70px)                  │
@@ -143,8 +143,21 @@ Agent 위치는 `getAgentPosition()` 함수가 DESK_CONFIGS에서 계산 (책상
 - **error**: 빨간 배경 깜빡임 + X 마크
 
 ### Agent Motion
-- **입장 모션**: 에이전트가 활성화되면 화면 하단에서 책상 위치로 700ms 동안 이동
-- **퇴장 모션**: 없음 (즉시 사라짐)
+- **입장 모션**: 에이전트가 활성화되면 화면 상단 입구에서 책상 위치로 700ms 동안 이동 (`entering` phase)
+- **걷기 모션**: 에이전트가 `idle` 상태로 전환되면 사무실을 걸어다님 (`walking` phase)
+  - 한 번이라도 등장한 에이전트만 걷기 가능 (처음 idle은 무시)
+  - 같은 Y band 내에서만 이동 (파티션 관통 방지)
+  - 2~4초 멈춤 후 다음 웨이포인트로 이동 반복
+  - 걷기 애니메이션: 더 빠른 프레임 간격(180ms), 더 큰 다리/팔 움직임
+  - 이동 방향에 따라 눈동자 시선 변경
+- **복귀 모션**: 걷는 중 `working` 상태로 전환되면 책상으로 복귀 (`returning` phase)
+  - 거리 기반 duration (300~800ms 범위)
+- **Walkable bands** (Y좌표 범위):
+  - 85~115: 파티션1 아래
+  - 175~280: Section A~B 사이
+  - 360~410: Section B~파티션2 사이
+  - 440~490: 파티션2 아래
+  - 565~670: Section C 아래~바닥
 
 ### Speech Bubble Timeout
 `OfficeCanvas`에서 `clearExpiredTasks()`를 1초마다 호출하여 5초 이상 업데이트 없는 에이전트의 말풍선을 자동으로 숨김. 타임아웃 값은 `SPEECH_BUBBLE_TIMEOUT_MS` 상수로 조절.

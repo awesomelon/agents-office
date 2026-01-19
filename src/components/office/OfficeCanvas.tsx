@@ -8,7 +8,7 @@ import type { Agent, AgentType, AgentStatus } from "../../types";
 import { formatAgentMessage } from "../../utils";
 
 // Canvas dimensions
-const OFFICE_WIDTH = 400;
+const OFFICE_WIDTH = 550;
 const OFFICE_HEIGHT = 700;
 
 type ViewportRect = { x: number; y: number; width: number; height: number };
@@ -77,7 +77,24 @@ const QUEUE_DOT_BLINK_MS = 500;
 const HUD_BAR_HEIGHT = 20;
 const SHOW_HUD = false;
 
-type MotionPhase = "absent" | "entering" | "present";
+// Walking motion
+const WALKING_SPEED_PX_PER_SEC = 35;
+const WALKING_PAUSE_MIN_MS = 2000;
+const WALKING_PAUSE_MAX_MS = 4000;
+const WALKING_ANIMATION_INTERVAL_MS = 180;
+
+// Walkable areas (same band only - 파티션 관통 방지)
+const WALKABLE_BANDS = [
+  { minY: 85, maxY: 115 },   // 파티션1 아래 ~ Section A 위
+  { minY: 175, maxY: 280 },  // Section A ~ Section B 사이
+  { minY: 360, maxY: 410 },  // Section B ~ 파티션2 사이
+  { minY: 440, maxY: 490 },  // 파티션2 아래 ~ Section C 위
+  { minY: 565, maxY: 670 },  // Section C 아래 ~ 바닥
+];
+const WALK_X_MIN = 30;
+const WALK_X_MAX = 520; // 캔버스 550 기준
+
+type MotionPhase = "absent" | "entering" | "present" | "walking" | "returning";
 
 interface AgentMotion {
   phase: MotionPhase;
@@ -101,6 +118,34 @@ function lerp(a: number, b: number, t: number): number {
 
 function clampByte(v: number): number {
   return Math.max(0, Math.min(255, v));
+}
+
+// Walking utility functions
+function findCurrentBand(y: number): typeof WALKABLE_BANDS[0] | null {
+  return WALKABLE_BANDS.find(b => y >= b.minY && y <= b.maxY) ?? null;
+}
+
+function generateWaypointInBand(band: typeof WALKABLE_BANDS[0]): { x: number; y: number } {
+  const x = WALK_X_MIN + Math.random() * (WALK_X_MAX - WALK_X_MIN);
+  const y = band.minY + Math.random() * (band.maxY - band.minY);
+  return { x, y };
+}
+
+function calculateDistance(from: {x: number; y: number}, to: {x: number; y: number}): number {
+  return Math.sqrt((to.x - from.x) ** 2 + (to.y - from.y) ** 2);
+}
+
+function calculateWalkDuration(from: {x: number; y: number}, to: {x: number; y: number}): number {
+  const dist = calculateDistance(from, to);
+  return Math.max(800, (dist / WALKING_SPEED_PX_PER_SEC) * 1000);
+}
+
+function calculateReturnDuration(from: {x: number; y: number}, to: {x: number; y: number}): number {
+  const dist = calculateDistance(from, to);
+  const RETURN_SPEED_PX_PER_SEC = 60;
+  const MIN_DURATION_MS = 300;
+  const MAX_DURATION_MS = 800;
+  return Math.min(MAX_DURATION_MS, Math.max(MIN_DURATION_MS, (dist / RETURN_SPEED_PX_PER_SEC) * 1000));
 }
 
 function adjustColor(color: number, delta: number): number {
@@ -717,7 +762,6 @@ function getScreenColor(status: AgentStatus): number {
     case "thinking": return 0x1a1a3a;
     case "passing": return 0x2a1a3a;
     case "error": return 0x3a1a1a;
-    default: return 0x1a2a3a;
   }
 }
 
@@ -850,6 +894,7 @@ interface AgentSpriteProps {
   x: number;
   y: number;
   alpha: number;
+  motion?: AgentMotion;
 }
 
 const VACATION_SIGN_TEXT_STYLE = new TextStyle({
@@ -1055,21 +1100,37 @@ function HudDisplay({ toolCallCount, avgToolResponseMs, errorCount, agentSwitchC
   );
 }
 
-function AgentSprite({ agent, x, y, alpha }: AgentSpriteProps): JSX.Element {
+function AgentSprite({ agent, x, y, alpha, motion }: AgentSpriteProps): JSX.Element {
   const [frame, setFrame] = useState(0);
+  const [walkFrame, setWalkFrame] = useState(0);
   const color = AGENT_COLORS[agent.agent_type];
   const statusColor = STATUS_COLORS[agent.status];
   const hairColor = HAIR_COLORS[agent.agent_type];
 
+  // Walking state
+  const isWalking = motion?.phase === "walking" || motion?.phase === "returning";
+  const walkDirection = isWalking && motion ? (motion.to.x < motion.from.x ? -1 : 1) : 1;
+
   useEffect(() => {
-    if (agent.status === "idle") return;
+    if (agent.status === "idle" && !isWalking) return;
 
     const interval = setInterval(() => {
       setFrame((f) => (f + 1) % 4);
     }, ANIMATION_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [agent.status]);
+  }, [agent.status, isWalking]);
+
+  // Faster walking animation
+  useEffect(() => {
+    if (!isWalking) return;
+
+    const interval = setInterval(() => {
+      setWalkFrame((f) => (f + 1) % 4);
+    }, WALKING_ANIMATION_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [isWalking]);
 
   const message = useMemo(() => {
     if (agent.status === "idle") return "";
@@ -1083,16 +1144,17 @@ function AgentSprite({ agent, x, y, alpha }: AgentSpriteProps): JSX.Element {
   const draw = useCallback((g: any) => {
     g.clear();
 
-    const bounce = agent.status !== "idle" ? Math.sin(frame * Math.PI / 2) * 3 : 0;
+    const effectiveFrame = isWalking ? walkFrame : frame;
+    const bounce = (agent.status !== "idle" || isWalking) ? Math.sin(effectiveFrame * Math.PI / 2) * 3 : 0;
     const isWorking = agent.status === "working" || agent.status === "thinking";
 
     drawAgentShadow(g);
-    drawAgentLegs(g, bounce, isWorking, frame);
-    drawAgentBody(g, bounce, color, isWorking, frame);
+    drawAgentLegs(g, bounce, isWorking || isWalking, effectiveFrame, isWalking);
+    drawAgentBody(g, bounce, color, isWorking || isWalking, effectiveFrame, isWalking);
     drawAgentHead(g, bounce, hairColor);
-    drawAgentFace(g, bounce, agent.status, frame);
+    drawAgentFace(g, bounce, agent.status, effectiveFrame, walkDirection, isWalking);
     drawStatusIndicator(g, bounce, statusColor, agent.status === "error");
-  }, [color, statusColor, hairColor, frame, agent.status]);
+  }, [color, statusColor, hairColor, frame, walkFrame, agent.status, isWalking, walkDirection]);
 
   const showBubble = agent.status !== "idle" && message;
 
@@ -1111,8 +1173,11 @@ function drawAgentShadow(g: any): void {
   g.endFill();
 }
 
-function drawAgentLegs(g: any, bounce: number, isWorking: boolean, frame: number): void {
-  const legOffset = isWorking ? Math.sin(frame * Math.PI) * 2 : 0;
+function drawAgentLegs(g: any, bounce: number, isWorking: boolean, frame: number, isWalking: boolean = false): void {
+  // Walking uses larger leg movement
+  const legOffset = isWalking
+    ? Math.sin(frame * Math.PI) * 4
+    : (isWorking ? Math.sin(frame * Math.PI) * 2 : 0);
 
   // Legs
   g.beginFill(0x3a3a5a);
@@ -1127,8 +1192,11 @@ function drawAgentLegs(g: any, bounce: number, isWorking: boolean, frame: number
   g.endFill();
 }
 
-function drawAgentBody(g: any, bounce: number, color: number, isWorking: boolean, frame: number): void {
-  const armSwing = isWorking ? Math.sin(frame * Math.PI) * 3 : 0;
+function drawAgentBody(g: any, bounce: number, color: number, isWorking: boolean, frame: number, isWalking: boolean = false): void {
+  // Walking uses larger arm swing
+  const armSwing = isWalking
+    ? Math.sin(frame * Math.PI) * 5
+    : (isWorking ? Math.sin(frame * Math.PI) * 3 : 0);
 
   // Torso
   g.beginFill(color);
@@ -1173,15 +1241,17 @@ function drawAgentHead(g: any, bounce: number, hairColor: number): void {
   g.endFill();
 }
 
-function drawAgentFace(g: any, bounce: number, status: string, frame: number): void {
+function drawAgentFace(g: any, bounce: number, status: string, frame: number, direction: number = 1, isWalking: boolean = false): void {
   // Eyes
   g.beginFill(0xffffff);
   g.drawRect(-7, -18 - bounce, 5, 5);
   g.drawRect(2, -18 - bounce, 5, 5);
   g.endFill();
 
-  // Pupils
-  const { lookX, lookY } = getPupilOffset(status, frame);
+  // Pupils - look in walking direction when walking
+  const { lookX, lookY } = isWalking
+    ? { lookX: direction * 1.5, lookY: 0 }
+    : getPupilOffset(status, frame);
   g.beginFill(0x2a2a3a);
   g.drawRect(-6 + lookX, -17 - bounce + lookY, 3, 3);
   g.drawRect(3 + lookX, -17 - bounce + lookY, 3, 3);
@@ -1467,7 +1537,10 @@ export function OfficeCanvas(): JSX.Element {
       // Check if any animations are active
       const hasActiveDocTransfers = documentTransfers.length > 0;
       const hasEnteringMotions = Object.values(motionById).some((m) => m.phase === "entering");
-      const needsUpdate = hasActiveDocTransfers || hasEnteringMotions;
+      const hasWalkingMotions = Object.values(motionById).some(
+        (m) => m.phase === "walking" || m.phase === "returning"
+      );
+      const needsUpdate = hasActiveDocTransfers || hasEnteringMotions || hasWalkingMotions;
 
       // Only trigger re-render when animations are active (throttled to ~30fps)
       if (needsUpdate && t - lastUpdateTime > 33) {
@@ -1490,6 +1563,7 @@ export function OfficeCanvas(): JSX.Element {
   }, [clearExpiredTasks]);
 
   // Start entering transition when agent becomes visible, or set absent when hidden.
+  // Also handle walking/returning transitions.
   useEffect(() => {
     const ts = nowRef.current;
     const start = { x: ENTRY_START_X, y: ENTRY_START_Y };
@@ -1504,8 +1578,22 @@ export function OfficeCanvas(): JSX.Element {
         const current = next[id];
 
         const currentPhase: MotionPhase = current?.phase ?? "absent";
+        const isCurrentlyWalking = currentPhase === "walking" || currentPhase === "returning";
+
         if (wantsVisible) {
-          if (currentPhase === "absent") {
+          // idle → working 전환
+          if (isCurrentlyWalking) {
+            // walking 중이면 returning으로 전환 (책상으로 복귀)
+            const pos = computeMotionState(current!, ts);
+            next[id] = {
+              phase: "returning",
+              startedAt: ts,
+              durationMs: calculateReturnDuration(pos, target),
+              from: { x: pos.x, y: pos.y, alpha: 1 },
+              to: { x: target.x, y: target.y, alpha: 1 },
+            };
+          } else if (currentPhase === "absent") {
+            // 첫 등장: entering
             next[id] = {
               phase: "entering",
               startedAt: ts,
@@ -1515,16 +1603,20 @@ export function OfficeCanvas(): JSX.Element {
             };
           }
         } else {
-          // Instantly hide when no longer visible (no exit animation)
-          if (currentPhase !== "absent") {
+          // working → idle 전환: present면 walking 시작
+          if (currentPhase === "present") {
+            const startPos = { x: target.x, y: target.y };
+            const band = findCurrentBand(startPos.y) ?? WALKABLE_BANDS[1]; // fallback
+            const waypoint = generateWaypointInBand(band);
             next[id] = {
-              phase: "absent",
+              phase: "walking",
               startedAt: ts,
-              durationMs: 0,
-              from: { x: target.x, y: target.y, alpha: 0 },
-              to: { x: target.x, y: target.y, alpha: 0 },
+              durationMs: calculateWalkDuration(startPos, waypoint),
+              from: { ...startPos, alpha: 1 },
+              to: { ...waypoint, alpha: 1 },
             };
           }
+          // absent 상태면 그대로 유지 (처음 idle은 walking 안 함)
         }
       }
 
@@ -1532,7 +1624,7 @@ export function OfficeCanvas(): JSX.Element {
     });
   }, [agents, vacationById]);
 
-  // Finalize entering motion (entering->present) - triggered by forceUpdate
+  // Finalize motion transitions (entering->present, walking->next waypoint, returning->present)
   useEffect(() => {
     const ts = nowRef.current;
     setMotionById((prev) => {
@@ -1540,13 +1632,30 @@ export function OfficeCanvas(): JSX.Element {
       const next: Record<string, AgentMotion> = { ...prev };
 
       for (const [id, motion] of Object.entries(prev)) {
-        if (motion.phase !== "entering") continue;
-
         const progress = (ts - motion.startedAt) / motion.durationMs;
         if (progress < 1) continue;
 
-        changed = true;
-        next[id] = { ...motion, phase: "present" };
+        if (motion.phase === "entering") {
+          changed = true;
+          next[id] = { ...motion, phase: "present" };
+        } else if (motion.phase === "returning") {
+          changed = true;
+          next[id] = { ...motion, phase: "present" };
+        } else if (motion.phase === "walking") {
+          // walking 완료: 같은 band 내 새 웨이포인트로 이동
+          const band = findCurrentBand(motion.to.y) ?? WALKABLE_BANDS[1];
+          const waypoint = generateWaypointInBand(band);
+          const pause = WALKING_PAUSE_MIN_MS + Math.random() * (WALKING_PAUSE_MAX_MS - WALKING_PAUSE_MIN_MS);
+
+          next[id] = {
+            phase: "walking",
+            startedAt: ts + pause, // 잠시 멈춤 후 이동
+            durationMs: calculateWalkDuration(motion.to, waypoint),
+            from: { ...motion.to },
+            to: { ...waypoint, alpha: 1 },
+          };
+          changed = true;
+        }
       }
 
       return changed ? next : prev;
@@ -1636,6 +1745,7 @@ export function OfficeCanvas(): JSX.Element {
                 x={state.x}
                 y={state.y}
                 alpha={state.alpha}
+                motion={motion}
               />
             );
           })}
