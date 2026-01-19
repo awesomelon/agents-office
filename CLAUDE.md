@@ -18,11 +18,11 @@ npm run dev
 # 프로덕션 빌드
 npm run tauri:build
 
+# 프론트엔드만 빌드
+npm run build
+
 # Rust 백엔드 타입 체크
 cd src-tauri && cargo check
-
-# Rust 백엔드 빌드
-cd src-tauri && cargo build
 ```
 
 ## Architecture

@@ -1,6 +1,6 @@
 # Agents Office
 
-Claude Code가 작업하는 과정을 **사무실 속 에이전트(Researcher/Coder/Reviewer/Artist)**로 시각화하는 Tauri 데스크톱 앱입니다.  
+Claude Code가 작업하는 과정을 **사무실 속 에이전트(Researcher/Coder/Reviewer/Manager)**로 시각화하는 Tauri 데스크톱 앱입니다.  
 로컬의 Claude 로그(`$HOME/.claude/**`)를 감시(watch)하고, 이벤트를 프론트엔드(PixiJS 캔버스 + Inbox 로그 패널)로 스트리밍합니다.
 
 ![Agents Office screenshot](./image.png)
