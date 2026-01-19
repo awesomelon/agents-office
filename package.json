@@ -1,13 +1,32 @@
 {
   "name": "agents-office",
-  "private": true,
   "version": "0.1.0",
+  "description": "Claude Code visualization as agents working in an office",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/awesomelon/agents-office.git"
+  },
+  "bugs": {
+    "url": "https://github.com/awesomelon/agents-office/issues"
+  },
+  "homepage": "https://github.com/awesomelon/agents-office#readme",
+  "keywords": [
+    "tauri",
+    "vite",
+    "react",
+    "pixijs",
+    "claude",
+    "visualization"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@pixi/react": "^7.1.2",
