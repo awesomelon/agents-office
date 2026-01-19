@@ -21,6 +21,9 @@ npm run tauri:build
 # 프론트엔드만 빌드
 npm run build
 
+# 프론트엔드 프리뷰 (빌드 결과 확인)
+npm run preview
+
 # Rust 백엔드 타입 체크
 cd src-tauri && cargo check
 
@@ -47,6 +50,7 @@ cd src-tauri && cargo test
 - `AgentUpdate`: 에이전트 상태/현재 작업 갱신
 - `WatcherStatus`: 상단 Watching/Idle 상태 표시
 - `SessionUpdate`: 세션 ID 갱신
+- `BatchUpdate`: 여러 로그/에이전트 업데이트를 배치로 처리 (성능 최적화)
 
 ### Backend (src-tauri/src/)
 - **lib.rs**: Tauri 앱 진입점, 백그라운드 태스크로 로그 워처 시작
@@ -167,3 +171,10 @@ Agent 위치는 `getAgentPosition()` 함수가 DESK_CONFIGS에서 계산 (책상
 3. **HUD 강조**: "LIMIT" 텍스트 빨간색 깜빡임
 
 레이트리밋 패턴 감지: `isLimitReachedMessage()` 함수가 "rate_limit", "hit your limit" 등 패턴 매칭.
+
+### Session Timeline
+`Timeline.tsx` 컴포넌트가 최근 이벤트를 가로 막대 형태로 시각화:
+- 색상 코딩된 점(dot)으로 이벤트 유형 표시 (tool_call, error 등)
+- 마우스 호버 시 툴팁으로 상세 정보 표시 (에이전트, 상대 시간)
+- `TIMELINE_COLORS`로 이벤트 유형별 색상 정의
+- 토글 버튼으로 표시/숨김 전환 가능

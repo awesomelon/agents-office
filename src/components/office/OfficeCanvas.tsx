@@ -8,7 +8,7 @@ import type { Agent, AgentType, AgentStatus } from "../../types";
 import { formatAgentMessage } from "../../utils";
 
 // Canvas dimensions
-const OFFICE_WIDTH = 900;
+const OFFICE_WIDTH = 400;
 const OFFICE_HEIGHT = 700;
 
 type ViewportRect = { x: number; y: number; width: number; height: number };
@@ -20,7 +20,7 @@ const ENTRANCE_HEIGHT = 48;
 const ENTRANCE_TOP_Y = 10;
 const ENTRANCE_PADDING = 6;
 
-const SUNFLOWER_FRAME_X = 320;
+const SUNFLOWER_FRAME_GAP = 14;
 
 // Wall (beige) palette
 const WALL_BEIGE_BASE = 0xe7d8bf;
@@ -158,44 +158,51 @@ function OfficeBackground({ viewport }: { viewport: ViewportRect }): JSX.Element
     const viewRight = viewX + viewW;
     const viewBottom = viewY + viewH;
 
+    // Clamp drawing to the office bounds to avoid tiling artifacts on wide viewports.
+    const clipLeft = Math.max(0, viewX);
+    const clipTop = Math.max(0, viewY);
+    const clipRight = Math.min(OFFICE_WIDTH, viewRight);
+    const clipBottom = Math.min(OFFICE_HEIGHT, viewBottom);
+    if (clipRight <= clipLeft || clipBottom <= clipTop) return;
+
     // Base background (grout tone)
     g.lineStyle(0);
     g.beginFill(TILE_GROUT_COLOR);
-    g.drawRect(viewX, viewY, viewW, viewH);
+    g.drawRect(clipLeft, clipTop, clipRight - clipLeft, clipBottom - clipTop);
     g.endFill();
 
     // Top band (wall / entrance area)
     if (shouldDrawTopBand(viewport)) {
-      const topBandTop = viewY;
-      const topBandBottom = Math.min(WALL_HEIGHT, viewBottom);
+      const topBandTop = clipTop;
+      const topBandBottom = Math.min(WALL_HEIGHT, clipBottom);
       if (topBandBottom > topBandTop) {
         g.beginFill(WALL_BEIGE_BASE);
-        g.drawRect(viewX, topBandTop, viewW, topBandBottom - topBandTop);
+        g.drawRect(clipLeft, topBandTop, clipRight - clipLeft, topBandBottom - topBandTop);
         g.endFill();
 
         // Subtle texture stripes
         g.beginFill(WALL_BEIGE_STRIPE, 0.35);
-        const stripeStart = Math.floor(viewX / 12) * 12;
-        for (let x = stripeStart; x < viewRight; x += 12) {
+        const stripeStart = Math.floor(clipLeft / 12) * 12;
+        for (let x = stripeStart; x < clipRight; x += 12) {
           g.drawRect(x, topBandTop, 4, topBandBottom - topBandTop);
         }
         g.endFill();
 
         // Wall base trim
         g.lineStyle(2, WALL_BEIGE_TRIM, 1);
-        g.moveTo(viewX, topBandBottom);
-        g.lineTo(viewRight, topBandBottom);
+        g.moveTo(clipLeft, topBandBottom);
+        g.lineTo(clipRight, topBandBottom);
         g.lineStyle(0);
       }
     }
 
     // Floor tiles (below top band)
-    const floorStartY = Math.max(FLOOR_START_Y, viewY);
-    if (viewBottom > floorStartY) {
-      const tileStartX = Math.floor(viewX / TILE_SIZE);
-      const tileEndX = Math.floor(viewRight / TILE_SIZE);
+    const floorStartY = Math.max(FLOOR_START_Y, clipTop);
+    if (clipBottom > floorStartY) {
+      const tileStartX = Math.floor(clipLeft / TILE_SIZE);
+      const tileEndX = Math.floor((clipRight - 1) / TILE_SIZE);
       const tileStartY = Math.floor(floorStartY / TILE_SIZE);
-      const tileEndY = Math.floor(viewBottom / TILE_SIZE);
+      const tileEndY = Math.floor((clipBottom - 1) / TILE_SIZE);
 
       for (let ty = tileStartY; ty <= tileEndY; ty++) {
         const y = ty * TILE_SIZE;
@@ -246,7 +253,7 @@ function OfficeBackground({ viewport }: { viewport: ViewportRect }): JSX.Element
       }
     }
 
-    // Entrance + bottom windows (repeat per 900px segment)
+    // Entrance + bottom windows (repeat per OFFICE_WIDTH segment)
     // Bottom band can be skipped when viewport doesn't intersect it.
     drawRepeatedDecorations(g, viewport);
   }, [viewport]);
@@ -255,23 +262,14 @@ function OfficeBackground({ viewport }: { viewport: ViewportRect }): JSX.Element
 }
 
 function drawRepeatedDecorations(g: any, viewport: ViewportRect): void {
-  const viewX = viewport.x;
-  const viewRight = viewport.x + viewport.width;
-
-  // Repeat original 900px-wide layout horizontally.
-  const segStart = Math.floor((viewX - OFFICE_WIDTH) / OFFICE_WIDTH);
-  const segEnd = Math.floor((viewRight + OFFICE_WIDTH) / OFFICE_WIDTH);
-
-  for (let seg = segStart; seg <= segEnd; seg++) {
-    const ox = seg * OFFICE_WIDTH;
-
-    if (shouldDrawTopBand(viewport)) {
-      drawSunflowerFrame(g, ox);
-      drawEntrance(g, ox);
-    }
-    if (shouldDrawBottomBand(viewport)) {
-      drawBottomWindowsBand(g, ox);
-    }
+  // Draw once within the office bounds; wide viewports are handled by clamping in OfficeBackground.
+  const ox = 0;
+  if (shouldDrawTopBand(viewport)) {
+    drawSunflowerFrame(g, ox);
+    drawEntrance(g, ox);
+  }
+  if (shouldDrawBottomBand(viewport)) {
+    drawBottomWindowsBand(g, ox);
   }
 }
 
@@ -336,9 +334,11 @@ function drawEntrance(g: any, offsetX: number): void {
 
 function drawSunflowerFrame(g: any, offsetX: number): void {
   // Place on the wall (left of the door)
-  const frameW = 34;
-  const frameH = 26;
-  const x = offsetX + OFFICE_WIDTH / 2 - ENTRANCE_WIDTH / 2 - SUNFLOWER_FRAME_X;
+  // Must remain within the top wall band (WALL_HEIGHT=70). y=18 => frameH should be <= 52.
+  const frameW = 72;
+  const frameH = 44;
+  const doorLeft = offsetX + OFFICE_WIDTH / 2 - ENTRANCE_WIDTH / 2;
+  const x = doorLeft - SUNFLOWER_FRAME_GAP - frameW;
   const y = 18;
 
   // Shadow
@@ -356,28 +356,140 @@ function drawSunflowerFrame(g: any, offsetX: number): void {
   g.drawRect(x + 3, y + 3, frameW - 6, frameH - 6);
   g.endFill();
 
-  // Sunflower (pixel-ish)
-  const cx = x + Math.floor(frameW / 2);
-  const cy = y + Math.floor(frameH / 2) + 1;
+  // Pixel art canvas inside the matte (no external asset)
+  const matteX = x + 3;
+  const matteY = y + 3;
+  const matteW = frameW - 6;
+  const matteH = frameH - 6;
 
-  // Petals
-  g.beginFill(0xfacc15, 0.95);
-  g.drawCircle(cx - 6, cy - 2, 4);
-  g.drawCircle(cx + 6, cy - 2, 4);
-  g.drawCircle(cx, cy - 7, 4);
-  g.drawCircle(cx, cy + 3, 4);
+  const PIXEL_SIZE = 2;
+  const ART_PADDING = 4;
+
+  const artX = matteX + ART_PADDING;
+  const artY = matteY + ART_PADDING;
+  const artW = matteW - ART_PADDING * 2;
+  const artH = matteH - ART_PADDING * 2;
+
+  const cols = Math.max(1, Math.floor(artW / PIXEL_SIZE));
+  const rows = Math.max(1, Math.floor(artH / PIXEL_SIZE));
+
+  const fitW = cols * PIXEL_SIZE;
+  const fitH = rows * PIXEL_SIZE;
+
+  // Palette (pixel art)
+  const PAL_BG = 0xeef2ff;
+  const PAL_OUTLINE = 0x1f2937;
+  const PAL_PETAL = 0xfbbf24;
+  const PAL_PETAL_DARK = 0xf59e0b;
+  const PAL_CENTER = 0x7c2d12;
+  const PAL_CENTER_HI = 0x9a3412;
+  const PAL_STEM = 0x22c55e;
+  const PAL_LEAF = 0x16a34a;
+
+  // Background
+  g.beginFill(PAL_BG, 1);
+  g.drawRect(artX, artY, fitW, fitH);
   g.endFill();
 
-  // Center
-  g.beginFill(0x7c2d12, 0.95);
-  g.drawCircle(cx, cy - 2, 4);
+  // Subtle inner border to read like a tiny canvas
+  g.beginFill(PAL_OUTLINE, 0.25);
+  g.drawRect(artX, artY, fitW, 1);
+  g.drawRect(artX, artY + fitH - 1, fitW, 1);
+  g.drawRect(artX, artY, 1, fitH);
+  g.drawRect(artX + fitW - 1, artY, 1, fitH);
   g.endFill();
 
-  // Stem + leaf
-  g.beginFill(0x22c55e, 0.7);
-  g.drawRect(cx - 1, cy + 2, 2, 6);
-  g.drawRect(cx - 5, cy + 5, 4, 2);
-  g.endFill();
+  const pixelsByColor: Record<number, Array<{ px: number; py: number }>> = {};
+
+  function setPixel(px: number, py: number, color: number): void {
+    if (px < 0 || py < 0 || px >= cols || py >= rows) return;
+    (pixelsByColor[color] ||= []).push({ px, py });
+  }
+
+  function stampSunflower(cx: number, cy: number, stemBottom: number, variant: 0 | 1): void {
+    // Outline around the center for crisp pixel look
+    const outline = [
+      [-1, -1],
+      [0, -1],
+      [1, -1],
+      [-1, 0],
+      [1, 0],
+      [-1, 1],
+      [0, 1],
+      [1, 1],
+    ] as const;
+    for (const [dx, dy] of outline) setPixel(cx + dx, cy + dy, PAL_OUTLINE);
+
+    // Petals (simple 8-direction + extras)
+    const petals = [
+      [0, -3],
+      [0, -2],
+      [0, 2],
+      [0, 3],
+      [-3, 0],
+      [-2, 0],
+      [2, 0],
+      [3, 0],
+      [-2, -2],
+      [2, -2],
+      [-2, 2],
+      [2, 2],
+      [-1, -3],
+      [1, -3],
+    ] as const;
+    for (let i = 0; i < petals.length; i++) {
+      const [dx, dy] = petals[i];
+      const useDark = (variant === 1 && i % 3 === 0) || (variant === 0 && i % 5 === 0);
+      setPixel(cx + dx, cy + dy, useDark ? PAL_PETAL_DARK : PAL_PETAL);
+    }
+
+    // Center (2x2) + highlight
+    setPixel(cx, cy, PAL_CENTER);
+    setPixel(cx + 1, cy, PAL_CENTER);
+    setPixel(cx, cy + 1, PAL_CENTER);
+    setPixel(cx + 1, cy + 1, PAL_CENTER);
+    setPixel(cx + 1, cy, PAL_CENTER_HI);
+
+    // Stem
+    const stemStart = cy + 3;
+    const bottom = Math.min(rows - 2, Math.max(stemStart, stemBottom));
+    for (let y1 = stemStart; y1 <= bottom; y1++) {
+      setPixel(cx, y1, PAL_STEM);
+    }
+
+    // Leaves (one or two)
+    const leafY = Math.min(rows - 3, stemStart + 2);
+    if (variant === 0) {
+      setPixel(cx - 1, leafY, PAL_LEAF);
+      setPixel(cx - 2, leafY + 1, PAL_LEAF);
+      setPixel(cx - 1, leafY + 1, PAL_LEAF);
+    } else {
+      setPixel(cx + 1, leafY, PAL_LEAF);
+      setPixel(cx + 2, leafY + 1, PAL_LEAF);
+      setPixel(cx + 1, leafY + 1, PAL_LEAF);
+      setPixel(cx - 1, leafY + 2, PAL_LEAF);
+    }
+  }
+
+  // Ground hint (tiny darker band at the bottom)
+  for (let px = 1; px < cols - 1; px++) {
+    if (px % 3 === 0) setPixel(px, rows - 2, 0xcbd5e1);
+  }
+
+  // Three sunflowers in the frame (2~4 requested; choose 3 for balanced composition)
+  stampSunflower(Math.floor(cols * 0.28), Math.floor(rows * 0.34), rows - 3, 0);
+  stampSunflower(Math.floor(cols * 0.52), Math.floor(rows * 0.28), rows - 4, 1);
+  stampSunflower(Math.floor(cols * 0.76), Math.floor(rows * 0.38), rows - 3, 0);
+
+  // Flush pixels by color to reduce beginFill calls
+  for (const [colorKey, points] of Object.entries(pixelsByColor)) {
+    const color = Number(colorKey);
+    g.beginFill(color, 1);
+    for (const { px, py } of points) {
+      g.drawRect(artX + px * PIXEL_SIZE, artY + py * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+    }
+    g.endFill();
+  }
 }
 
 function drawBottomWindowsBand(g: any, offsetX: number): void {
@@ -517,7 +629,7 @@ function HorizontalPartition({ y }: HorizontalPartitionProps): JSX.Element {
     g.clear();
     const LEFT = 10;
     const HEIGHT = 12;
-    const WIDTH = 400; // 책상 영역에 맞춤
+    const WIDTH = OFFICE_WIDTH - LEFT * 2;
 
     // Shadow
     g.beginFill(0x000000, 0.12);
