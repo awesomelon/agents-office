@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useAgentStore, useLogStore, useHudStore } from "../store";
+import { useAgentStore, useLogStore, useHudStore, type BatchUpdateData } from "../store";
 import type { Agent, AppEvent, LogEntry } from "../types";
 
 // Tauri 환경인지 체크 (브라우저에서 npm run dev 실행 시 false)
@@ -11,11 +11,9 @@ function isTauriEnv(): boolean {
 export function useTauriEvents(): void {
   const {
     updateAgent,
-    updateAgentsBatch,
+    processBatchUpdate,
     setAgentVacation,
-    setAgentVacationsBatch,
     setAgentError,
-    setAgentErrorsBatch,
     startDocumentTransfer,
     setLastActiveAgent,
   } = useAgentStore();
@@ -68,11 +66,7 @@ export function useTauriEvents(): void {
         case "BatchUpdate":
           handleBatchUpdate(appEvent.payload.logs, appEvent.payload.agents, {
             addLogsBatch,
-            updateAgentsBatch,
-            setAgentVacationsBatch,
-            setAgentErrorsBatch,
-            startDocumentTransfer,
-            setLastActiveAgent,
+            processBatchUpdate,
             lastActiveAgentIdRef,
             recordEventsBatch,
             setRateLimitActive,
@@ -84,7 +78,7 @@ export function useTauriEvents(): void {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [updateAgent, updateAgentsBatch, addLog, addLogsBatch, setSessionId, setWatcherStatus, setAgentVacation, setAgentVacationsBatch, setAgentError, setAgentErrorsBatch, startDocumentTransfer, setLastActiveAgent, recordToolCall, recordToolResult, recordError, recordAgentSwitch, recordEventsBatch, setRateLimitActive]);
+  }, [updateAgent, processBatchUpdate, addLog, addLogsBatch, setSessionId, setWatcherStatus, setAgentVacation, setAgentError, startDocumentTransfer, setLastActiveAgent, recordToolCall, recordToolResult, recordError, recordAgentSwitch, recordEventsBatch, setRateLimitActive]);
 }
 
 // Optimized: Single regex pattern for rate limit detection
@@ -213,39 +207,23 @@ function inferAgentId(entry: LogEntry): string | null {
   return "editor";
 }
 
-// Batch update handlers
 interface BatchUpdateHandlers {
   addLogsBatch: (entries: LogEntry[]) => void;
-  updateAgentsBatch: (agents: Agent[]) => void;
-  setAgentVacationsBatch: (vacations: Record<string, boolean>) => void;
-  setAgentErrorsBatch: (errors: Record<string, boolean>) => void;
-  startDocumentTransfer: (fromAgentId: string, toAgentId: string, toolName?: string | null) => void;
-  setLastActiveAgent: (id: string) => void;
+  processBatchUpdate: (data: BatchUpdateData) => void;
   lastActiveAgentIdRef: { current: string | null };
   recordEventsBatch: (entries: LogEntry[], agentSwitchCount: number) => void;
   setRateLimitActive: (active: boolean) => void;
 }
 
 function handleBatchUpdate(logs: LogEntry[], agents: Agent[], handlers: BatchUpdateHandlers): void {
-  const {
-    addLogsBatch,
-    updateAgentsBatch,
-    setAgentVacationsBatch,
-    setAgentErrorsBatch,
-    startDocumentTransfer,
-    setLastActiveAgent,
-    lastActiveAgentIdRef,
-    recordEventsBatch,
-    setRateLimitActive,
-  } = handlers;
+  const { addLogsBatch, processBatchUpdate, lastActiveAgentIdRef, recordEventsBatch, setRateLimitActive } = handlers;
 
-  // Batch store updates
   addLogsBatch(logs);
-  updateAgentsBatch(agents);
 
-  // Process logs for vacation/error states and document transfers
   const vacations: Record<string, boolean> = {};
   const errors: Record<string, boolean> = {};
+  const newDocumentTransfers: BatchUpdateData["newDocumentTransfers"] = [];
+  let lastActiveId: string | null = null;
   let agentSwitchCount = 0;
   let rateLimitDetected = false;
   let activityResumed = false;
@@ -255,7 +233,6 @@ function handleBatchUpdate(logs: LogEntry[], agents: Agent[], handlers: BatchUpd
     const agentId = inferredAgentId ?? lastActiveAgentIdRef.current;
     const isActivity = isToolActivity(entry.entry_type);
 
-    // Rate limit detection
     if (isLimitReachedMessage(entry.content)) {
       rateLimitDetected = true;
       if (agentId) vacations[agentId] = true;
@@ -264,38 +241,32 @@ function handleBatchUpdate(logs: LogEntry[], agents: Agent[], handlers: BatchUpd
       if (agentId) vacations[agentId] = false;
     }
 
-    // Error state tracking
     if (entry.entry_type === "error" && agentId) {
       errors[agentId] = true;
     } else if (agentId && isActivity) {
       errors[agentId] = false;
     }
 
-    // Document transfer tracking
     if (entry.entry_type === "tool_call" && inferredAgentId) {
       const previousAgentId = lastActiveAgentIdRef.current;
       if (previousAgentId && previousAgentId !== inferredAgentId) {
-        startDocumentTransfer(previousAgentId, inferredAgentId, entry.tool_name);
+        newDocumentTransfers.push({ from: previousAgentId, to: inferredAgentId, toolName: entry.tool_name });
         agentSwitchCount++;
       }
       lastActiveAgentIdRef.current = inferredAgentId;
-      setLastActiveAgent(inferredAgentId);
+      lastActiveId = inferredAgentId;
     } else if (inferredAgentId) {
       lastActiveAgentIdRef.current = inferredAgentId;
     }
   }
 
-  // Batch update states
-  setAgentVacationsBatch(vacations);
-  setAgentErrorsBatch(errors);
+  processBatchUpdate({ agentList: agents, vacations, errors, newDocumentTransfers, lastActiveId });
 
-  // Update rate limit status (latest state wins)
   if (rateLimitDetected) {
     setRateLimitActive(true);
   } else if (activityResumed) {
     setRateLimitActive(false);
   }
 
-  // Batch record HUD events
   recordEventsBatch(logs, agentSwitchCount);
 }

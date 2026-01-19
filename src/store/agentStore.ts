@@ -12,16 +12,25 @@ export interface DocumentTransfer {
 const MAX_DOCUMENT_TRANSFERS = 8;
 let documentTransferSeq = 0;
 
+export interface BatchUpdateData {
+  agentList: Agent[];
+  vacations: Record<string, boolean>;
+  errors: Record<string, boolean>;
+  newDocumentTransfers: Array<{ from: string; to: string; toolName?: string | null }>;
+  lastActiveId: string | null;
+}
+
 interface AgentState {
   agents: Record<string, Agent>;
   vacationById: Record<string, boolean>;
-  errorById: Record<string, boolean>; // track error state per agent
+  errorById: Record<string, boolean>;
   documentTransfers: DocumentTransfer[];
   lastActiveAgentId: string | null;
   lastTaskUpdateById: Record<string, number>; // timestamp when task was last updated
   initializeAgents: () => void;
   updateAgent: (agent: Agent) => void;
   updateAgentsBatch: (agentList: Agent[]) => void;
+  processBatchUpdate: (data: BatchUpdateData) => void;
   setAgentStatus: (id: string, status: AgentStatus) => void;
   setAgentTask: (id: string, task: string | null) => void;
   setAgentVacation: (id: string, on: boolean) => void;
@@ -97,6 +106,49 @@ export const useAgentStore = create<AgentState>((set) => ({
       return {
         agents: newAgents,
         lastTaskUpdateById: newLastTaskUpdate,
+      };
+    });
+  },
+
+  processBatchUpdate: ({ agentList, vacations, errors, newDocumentTransfers, lastActiveId }) => {
+    set((state) => {
+      const now = Date.now();
+      const startedAt = performance.now();
+      const newAgents = { ...state.agents };
+      const newLastTaskUpdate = { ...state.lastTaskUpdateById };
+
+      for (const agent of agentList) {
+        if (!newAgents[agent.id] && agent.status === "idle") {
+          continue;
+        }
+        const taskChanged = newAgents[agent.id]?.current_task !== agent.current_task;
+        newAgents[agent.id] = agent;
+        if (taskChanged && agent.current_task) {
+          newLastTaskUpdate[agent.id] = now;
+        }
+      }
+
+      const newTransfers = newDocumentTransfers.map((t) => ({
+        id: `${Date.now()}-${documentTransferSeq++}`,
+        fromAgentId: t.from,
+        toAgentId: t.to,
+        startedAt,
+        toolName: t.toolName ?? null,
+      }));
+
+      const hasVacationUpdates = Object.keys(vacations).length > 0;
+      const hasErrorUpdates = Object.keys(errors).length > 0;
+      const hasNewTransfers = newTransfers.length > 0;
+
+      return {
+        agents: newAgents,
+        lastTaskUpdateById: newLastTaskUpdate,
+        vacationById: hasVacationUpdates ? { ...state.vacationById, ...vacations } : state.vacationById,
+        errorById: hasErrorUpdates ? { ...state.errorById, ...errors } : state.errorById,
+        documentTransfers: hasNewTransfers
+          ? [...state.documentTransfers, ...newTransfers].slice(-MAX_DOCUMENT_TRANSFERS)
+          : state.documentTransfers,
+        lastActiveAgentId: lastActiveId ?? state.lastActiveAgentId,
       };
     });
   },

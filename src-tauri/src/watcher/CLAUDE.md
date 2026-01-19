@@ -7,5 +7,9 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #200 | 11:35 AM | 🟣 | Watcher Module Structure for Log Monitoring | ~208 |
+| #234 | 11:45 AM | 🔄 | Consolidated notify Imports Through Debouncer Re-export | ~278 |
+| #231 | 11:44 AM | 🔴 | Fixed Watcher API Usage and Removed Unused Imports | ~326 |
+| #202 | 11:35 AM | 🟣 | Filesystem Watcher with Incremental Log Reading | ~583 |
+| #201 | " | 🟣 | Log Parser with Tool-to-Agent Mapping Logic | ~556 |
+| #200 | " | 🟣 | Watcher Module Structure for Log Monitoring | ~208 |
 </claude-mem-context>
