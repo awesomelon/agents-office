@@ -1,4 +1,4 @@
-export type AgentType = "researcher" | "coder" | "reviewer" | "manager";
+export type AgentType = "reader" | "searcher" | "writer" | "editor" | "runner" | "tester" | "planner" | "support";
 
 export type AgentStatus = "idle" | "working" | "thinking" | "passing" | "error";
 
@@ -42,17 +42,25 @@ export interface DeskConfig {
 }
 
 export const DESK_CONFIGS: DeskConfig[] = [
-  { id: "researcher", position: [180, 160], agentType: "researcher", label: "Researcher" },
-  { id: "coder", position: [520, 160], agentType: "coder", label: "Coder" },
-  { id: "reviewer", position: [180, 360], agentType: "reviewer", label: "Reviewer" },
-  { id: "manager", position: [520, 360], agentType: "manager", label: "Manager" },
+  { id: "reader", position: [115, 160], agentType: "reader", label: "Reader" },
+  { id: "searcher", position: [315, 160], agentType: "searcher", label: "Searcher" },
+  { id: "writer", position: [515, 160], agentType: "writer", label: "Writer" },
+  { id: "editor", position: [715, 160], agentType: "editor", label: "Editor" },
+  { id: "runner", position: [115, 360], agentType: "runner", label: "Runner" },
+  { id: "tester", position: [315, 360], agentType: "tester", label: "Tester" },
+  { id: "planner", position: [515, 360], agentType: "planner", label: "Planner" },
+  { id: "support", position: [715, 360], agentType: "support", label: "Support" },
 ];
 
 export const AGENT_COLORS: Record<AgentType, number> = {
-  researcher: 0x60a5fa, // blue
-  coder: 0x4ade80, // green
-  reviewer: 0xfbbf24, // yellow
-  manager: 0xf472b6, // pink
+  reader: 0x60a5fa, // blue
+  searcher: 0x38bdf8, // sky blue
+  writer: 0x4ade80, // green
+  editor: 0x22c55e, // dark green
+  runner: 0xfbbf24, // yellow
+  tester: 0xf97316, // orange
+  planner: 0xf472b6, // pink
+  support: 0xa78bfa, // purple
 };
 
 export const STATUS_COLORS: Record<AgentStatus, number> = {
@@ -61,4 +69,24 @@ export const STATUS_COLORS: Record<AgentStatus, number> = {
   thinking: 0x3b82f6,
   passing: 0xa855f7,
   error: 0xef4444,
+};
+
+export interface TimelineEvent {
+  id: string;
+  timestamp: Date;
+  entry_type: LogEntryType;
+  agent_id: string | null;
+  tool_name: string | null;
+  displayText: string;
+  relativeTime: string;
+}
+
+export const TIMELINE_COLORS: Record<LogEntryType, string> = {
+  tool_call: "#3b82f6",    // blue
+  tool_result: "#22c55e",  // green
+  error: "#ef4444",        // red
+  todo_update: "#a855f7",  // purple
+  message: "#6b7280",      // gray
+  session_start: "#facc15", // yellow
+  session_end: "#facc15",   // yellow
 };

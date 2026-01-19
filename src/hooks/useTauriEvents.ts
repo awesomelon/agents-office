@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useAgentStore, useLogStore } from "../store";
+import { useAgentStore, useLogStore, useHudStore } from "../store";
 import type { AppEvent, LogEntry } from "../types";
 
 // Tauri 환경인지 체크 (브라우저에서 npm run dev 실행 시 false)
@@ -9,8 +9,9 @@ function isTauriEnv(): boolean {
 }
 
 export function useTauriEvents(): void {
-  const { updateAgent, setAgentVacation, startDocumentTransfer, setLastActiveAgent } = useAgentStore();
+  const { updateAgent, setAgentVacation, setAgentError, startDocumentTransfer, setLastActiveAgent } = useAgentStore();
   const { addLog, setSessionId, setWatcherStatus } = useLogStore();
+  const { recordToolCall, recordToolResult, recordError, recordAgentSwitch, setRateLimitActive } = useHudStore();
   const lastActiveAgentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -27,9 +28,15 @@ export function useTauriEvents(): void {
           handleLogEntry(appEvent.payload, {
             addLog,
             setAgentVacation,
+            setAgentError,
             startDocumentTransfer,
             setLastActiveAgent,
             lastActiveAgentIdRef,
+            recordToolCall,
+            recordToolResult,
+            recordError,
+            recordAgentSwitch,
+            setRateLimitActive,
           });
           break;
 
@@ -54,7 +61,7 @@ export function useTauriEvents(): void {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [updateAgent, addLog, setSessionId, setWatcherStatus, setAgentVacation, startDocumentTransfer, setLastActiveAgent]);
+  }, [updateAgent, addLog, setSessionId, setWatcherStatus, setAgentVacation, setAgentError, startDocumentTransfer, setLastActiveAgent, recordToolCall, recordToolResult, recordError, recordAgentSwitch, setRateLimitActive]);
 }
 
 const LIMIT_REACHED_PATTERNS: RegExp[] = [
@@ -77,26 +84,68 @@ function isLimitReachedMessage(content: string): boolean {
 interface LogEntryHandlers {
   addLog: (entry: LogEntry) => void;
   setAgentVacation: (id: string, on: boolean) => void;
-  startDocumentTransfer: (fromAgentId: string, toAgentId: string) => void;
+  setAgentError: (id: string, hasError: boolean) => void;
+  startDocumentTransfer: (fromAgentId: string, toAgentId: string, toolName?: string | null) => void;
   setLastActiveAgent: (id: string) => void;
   lastActiveAgentIdRef: { current: string | null };
+  recordToolCall: () => void;
+  recordToolResult: () => void;
+  recordError: () => void;
+  recordAgentSwitch: () => void;
+  setRateLimitActive: (active: boolean) => void;
 }
 
 function handleLogEntry(entry: LogEntry, handlers: LogEntryHandlers): void {
-  const { addLog, setAgentVacation, startDocumentTransfer, setLastActiveAgent, lastActiveAgentIdRef } = handlers;
+  const {
+    addLog,
+    setAgentVacation,
+    setAgentError,
+    startDocumentTransfer,
+    setLastActiveAgent,
+    lastActiveAgentIdRef,
+    recordToolCall,
+    recordToolResult,
+    recordError,
+    recordAgentSwitch,
+    setRateLimitActive,
+  } = handlers;
 
   addLog(entry);
 
   const inferredAgentId = inferAgentId(entry);
   const agentId = inferredAgentId ?? lastActiveAgentIdRef.current;
 
-  // Handle vacation flag
-  if (agentId) {
-    if (isLimitReachedMessage(entry.content)) {
+  // HUD: Record tool calls
+  if (entry.entry_type === "tool_call") {
+    recordToolCall();
+  }
+  if (entry.entry_type === "tool_result") {
+    recordToolResult();
+  }
+
+  // HUD: Handle rate limit detection
+  if (isLimitReachedMessage(entry.content)) {
+    setRateLimitActive(true);
+    if (agentId) {
       setAgentVacation(agentId, true);
-    } else if (entry.entry_type === "tool_call" || entry.entry_type === "tool_result") {
+    }
+  } else if (entry.entry_type === "tool_call" || entry.entry_type === "tool_result") {
+    // Activity resumes, rate limit over
+    setRateLimitActive(false);
+    if (agentId) {
       setAgentVacation(agentId, false);
     }
+  }
+
+  // HUD: Record errors and set agent error state
+  if (entry.entry_type === "error") {
+    recordError();
+    if (agentId) {
+      setAgentError(agentId, true);
+    }
+  } else if (agentId && (entry.entry_type === "tool_call" || entry.entry_type === "tool_result")) {
+    // Clear error on successful tool activity
+    setAgentError(agentId, false);
   }
 
   // Handle document transfer (only on tool_call with valid agent)
@@ -104,7 +153,8 @@ function handleLogEntry(entry: LogEntry, handlers: LogEntryHandlers): void {
     const previousAgentId = lastActiveAgentIdRef.current;
 
     if (previousAgentId && previousAgentId !== inferredAgentId) {
-      startDocumentTransfer(previousAgentId, inferredAgentId);
+      startDocumentTransfer(previousAgentId, inferredAgentId, entry.tool_name);
+      recordAgentSwitch(); // HUD: Record agent switch
     }
 
     lastActiveAgentIdRef.current = inferredAgentId;
@@ -122,29 +172,44 @@ function inferAgentId(entry: LogEntry): string | null {
   const tool = entry.tool_name?.trim()?.toLowerCase();
   if (!tool) return null;
 
-  // Research tools
-  if (tool === "read" || tool === "glob" || tool === "grep" || tool === "websearch" || tool === "webfetch") {
-    return "researcher";
+  // Reader: file reading
+  if (tool === "read") {
+    return "reader";
   }
 
-  // Edit/Write tools
-  if (tool === "write" || tool === "edit" || tool === "notebookedit" || tool === "editnotebook") {
-    return "coder";
+  // Searcher: search and web tools
+  if (tool === "glob" || tool === "grep" || tool === "websearch" || tool === "webfetch") {
+    return "searcher";
   }
 
-  // Bash - context-dependent
+  // Writer: file creation
+  if (tool === "write") {
+    return "writer";
+  }
+
+  // Editor: code modification
+  if (tool === "edit" || tool === "notebookedit" || tool === "editnotebook") {
+    return "editor";
+  }
+
+  // Bash: context-dependent (Runner vs Tester)
   if (tool === "bash") {
     const content = entry.content.toLowerCase();
-    if (content.includes("git") || content.includes("test") || content.includes("npm") || content.includes("pnpm")) {
-      return "reviewer";
+    if (content.includes("git") || content.includes("test") || content.includes("npm") || content.includes("pnpm") || content.includes("yarn") || content.includes("cargo")) {
+      return "tester";
     }
-    return "coder";
+    return "runner";
   }
 
-  // Task management tools
+  // Planner: task management
   if (tool === "todowrite" || tool === "task") {
-    return "manager";
+    return "planner";
   }
 
-  return "coder";
+  // Support: user questions
+  if (tool === "askuserquestion") {
+    return "support";
+  }
+
+  return "editor";
 }

@@ -89,27 +89,40 @@ pub fn parse_session_line(line: &str) -> Option<LogEntry> {
 pub fn determine_agent_type(entry: &LogEntry) -> AgentType {
     if let Some(ref tool) = entry.tool_name {
         match tool.to_lowercase().as_str() {
-            "read" | "glob" | "grep" | "websearch" | "webfetch" => AgentType::Researcher,
-            "write" | "edit" | "notebookedit" => AgentType::Coder,
+            // Reader: file reading
+            "read" => AgentType::Reader,
+            // Searcher: search and web tools
+            "glob" | "grep" | "websearch" | "webfetch" => AgentType::Searcher,
+            // Writer: file creation
+            "write" => AgentType::Writer,
+            // Editor: code modification
+            "edit" | "notebookedit" => AgentType::Editor,
+            // Bash: context-dependent (Runner vs Tester)
             "bash" => {
-                // Check if it's a git or test command
-                if entry.content.contains("git")
-                    || entry.content.contains("test")
-                    || entry.content.contains("npm")
-                    || entry.content.contains("pnpm")
+                let content = entry.content.to_lowercase();
+                // Tester: git, test, npm, pnpm, yarn, cargo commands
+                if content.contains("git")
+                    || content.contains("test")
+                    || content.contains("npm")
+                    || content.contains("pnpm")
+                    || content.contains("yarn")
+                    || content.contains("cargo")
                 {
-                    AgentType::Reviewer
+                    AgentType::Tester
                 } else {
-                    AgentType::Coder
+                    AgentType::Runner
                 }
             }
-            "todowrite" | "task" => AgentType::Manager,
-            _ => AgentType::Coder,
+            // Planner: task management
+            "todowrite" | "task" => AgentType::Planner,
+            // Support: user questions
+            "askuserquestion" => AgentType::Support,
+            _ => AgentType::Editor,
         }
     } else if entry.entry_type == LogEntryType::Error {
-        AgentType::Reviewer
+        AgentType::Support
     } else {
-        AgentType::Coder
+        AgentType::Editor
     }
 }
 
@@ -180,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_agent_type_researcher() {
+    fn test_determine_agent_type_searcher() {
         let entry = LogEntry {
             timestamp: String::new(),
             entry_type: LogEntryType::ToolCall,
@@ -188,6 +201,6 @@ mod tests {
             agent_id: None,
             tool_name: Some("Grep".to_string()),
         };
-        assert_eq!(determine_agent_type(&entry), AgentType::Researcher);
+        assert_eq!(determine_agent_type(&entry), AgentType::Searcher);
     }
 }

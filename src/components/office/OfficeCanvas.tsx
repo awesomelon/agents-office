@@ -1,13 +1,14 @@
 import { Stage, Container, Graphics, Text } from "@pixi/react";
 import { useCallback, useState, useEffect, useMemo } from "react";
 import { TextStyle } from "pixi.js";
-import { useAgentStore, type DocumentTransfer } from "../../store";
+import { useShallow } from "zustand/shallow";
+import { useAgentStore, useHudStore, startHudPruning, stopHudPruning, type DocumentTransfer } from "../../store";
 import { DESK_CONFIGS, AGENT_COLORS, STATUS_COLORS } from "../../types";
 import type { Agent, AgentType, AgentStatus } from "../../types";
 import { formatAgentMessage } from "../../utils";
 
 // Canvas dimensions
-const OFFICE_WIDTH = 700;
+const OFFICE_WIDTH = 900;
 const OFFICE_HEIGHT = 500;
 
 // Floor configuration
@@ -41,6 +42,15 @@ const DESK_VACATION_SIGN_Y = 34;
 const DOCUMENT_TRANSFER_DURATION_MS = 600;
 const DOCUMENT_SIZE = 16;
 
+// Alert light animation
+const ALERT_LIGHT_BLINK_MS = 200;
+
+// Queue indicator animation
+const QUEUE_DOT_BLINK_MS = 500;
+
+// HUD bar
+const HUD_BAR_HEIGHT = 20;
+
 type MotionPhase = "absent" | "entering" | "present";
 
 interface AgentMotion {
@@ -65,10 +75,14 @@ function lerp(a: number, b: number, t: number): number {
 
 // Hair colors by agent type
 const HAIR_COLORS: Record<AgentType, number> = {
-  researcher: 0x4a3728, // Brown
-  coder: 0x2a2a3a, // Dark
-  reviewer: 0x8b6914, // Blonde
-  manager: 0x8b2252, // Reddish
+  reader: 0x4a3728, // Brown
+  searcher: 0x2a4a6a, // Dark blue
+  writer: 0x2a5a2a, // Dark green
+  editor: 0x2a2a3a, // Dark
+  runner: 0x8b6914, // Blonde
+  tester: 0x8b4514, // Auburn
+  planner: 0x8b2252, // Reddish
+  support: 0x5a2a6a, // Purple
 };
 
 function OfficeBackground(): JSX.Element {
@@ -111,8 +125,8 @@ function OfficeBackground(): JSX.Element {
     }
     g.endFill();
 
-    // Windows
-    drawWindows(g, [290, 410]);
+    // Windows (4 windows for wider canvas)
+    drawWindows(g, [140, 320, 500, 680]);
 
     // Decorative plants
     g.lineStyle(0);
@@ -169,6 +183,7 @@ interface DeskProps {
   y: number;
   label: string;
   showVacation: boolean;
+  hasError: boolean;
   agentStatus: AgentStatus;
   agentType: AgentType;
 }
@@ -183,7 +198,7 @@ const DESK_LABEL_STYLE = new TextStyle({
   dropShadowDistance: 1,
 });
 
-function Desk({ x, y, label, showVacation, agentStatus, agentType }: DeskProps): JSX.Element {
+function Desk({ x, y, label, showVacation, hasError, agentStatus, agentType }: DeskProps): JSX.Element {
   const draw = useCallback((g: any) => {
     g.clear();
     drawDeskBase(g);
@@ -196,9 +211,17 @@ function Desk({ x, y, label, showVacation, agentStatus, agentType }: DeskProps):
     <Container x={x} y={y}>
       <Graphics draw={draw} />
       <MonitorScreen status={agentStatus} agentType={agentType} />
+      {hasError && (
+        <Container x={25} y={-28}>
+          <AlertLight />
+        </Container>
+      )}
       {showVacation && (
         <Container x={DESK_VACATION_SIGN_X} y={DESK_VACATION_SIGN_Y}>
           <VacationSign />
+          <Container x={0} y={22}>
+            <QueueIndicator />
+          </Container>
         </Container>
       )}
       <Text text={label} style={DESK_LABEL_STYLE} anchor={0.5} y={45} />
@@ -479,6 +502,166 @@ function VacationSign(): JSX.Element {
   );
 }
 
+// AlertLight component: flashing red siren on desk
+function AlertLight(): JSX.Element {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((f) => (f + 1) % 2);
+    }, ALERT_LIGHT_BLINK_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  const draw = useCallback((g: any) => {
+    g.clear();
+
+    const isOn = frame === 0;
+
+    // Light glow when on
+    if (isOn) {
+      g.beginFill(0xff4040, 0.3);
+      g.drawCircle(0, 0, 10);
+      g.endFill();
+    }
+
+    // Light base
+    g.beginFill(0x2a2a2a);
+    g.drawRect(-4, 2, 8, 4);
+    g.endFill();
+
+    // Light dome
+    g.beginFill(isOn ? 0xff4040 : 0x8b2020);
+    g.drawCircle(0, 0, 5);
+    g.endFill();
+
+    // Highlight
+    if (isOn) {
+      g.beginFill(0xffffff, 0.5);
+      g.drawCircle(-1, -1, 2);
+      g.endFill();
+    }
+  }, [frame]);
+
+  return <Graphics draw={draw} />;
+}
+
+// QueueIndicator component: loading dots animation for rate limit
+function QueueIndicator(): JSX.Element {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((f) => (f + 1) % 3);
+    }, QUEUE_DOT_BLINK_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  const draw = useCallback((g: any) => {
+    g.clear();
+
+    // Hourglass icon
+    g.beginFill(0xfbbf24, 0.8);
+    // Top half
+    g.moveTo(-4, -8);
+    g.lineTo(4, -8);
+    g.lineTo(0, -3);
+    g.closePath();
+    // Bottom half
+    g.moveTo(-4, 2);
+    g.lineTo(4, 2);
+    g.lineTo(0, -3);
+    g.closePath();
+    g.endFill();
+
+    // Loading dots
+    for (let i = 0; i < 3; i++) {
+      const alpha = i === frame ? 1 : 0.3;
+      g.beginFill(0xfbbf24, alpha);
+      g.drawCircle(-6 + i * 6, 10, 2);
+      g.endFill();
+    }
+  }, [frame]);
+
+  return <Graphics draw={draw} />;
+}
+
+// HudDisplay component: top bar showing metrics
+interface HudDisplayProps {
+  toolCallCount: number;
+  avgToolResponseMs: number | null;
+  errorCount: number;
+  agentSwitchCount: number;
+  rateLimitActive: boolean;
+}
+
+const HUD_TEXT_STYLE = new TextStyle({
+  fontFamily: '"Press Start 2P", monospace',
+  fontSize: 7,
+  fill: 0xe0e0e0,
+  dropShadow: true,
+  dropShadowColor: 0x000000,
+  dropShadowBlur: 0,
+  dropShadowDistance: 1,
+});
+
+const HUD_LIMIT_TEXT_STYLE = new TextStyle({
+  fontFamily: '"Press Start 2P", monospace',
+  fontSize: 7,
+  fill: 0xff6060,
+  dropShadow: true,
+  dropShadowColor: 0x000000,
+  dropShadowBlur: 0,
+  dropShadowDistance: 1,
+});
+
+function HudDisplay({ toolCallCount, avgToolResponseMs, errorCount, agentSwitchCount, rateLimitActive }: HudDisplayProps): JSX.Element {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    if (!rateLimitActive) return;
+    const interval = setInterval(() => {
+      setFrame((f) => (f + 1) % 2);
+    }, 500);
+    return () => clearInterval(interval);
+  }, [rateLimitActive]);
+
+  const draw = useCallback((g: any) => {
+    g.clear();
+
+    // Semi-transparent background bar
+    g.beginFill(0x1a1a2e, 0.85);
+    g.drawRect(0, 0, OFFICE_WIDTH, HUD_BAR_HEIGHT);
+    g.endFill();
+
+    // Bottom border
+    g.lineStyle(1, 0x4a4a6a, 0.5);
+    g.moveTo(0, HUD_BAR_HEIGHT);
+    g.lineTo(OFFICE_WIDTH, HUD_BAR_HEIGHT);
+  }, []);
+
+  const avgText = typeof avgToolResponseMs === "number"
+    ? (avgToolResponseMs >= 1000 ? `${(avgToolResponseMs / 1000).toFixed(1)}s` : `${avgToolResponseMs}ms`)
+    : "--";
+  const mainText = `Calls: ${toolCallCount}  Avg: ${avgText}  Err: ${errorCount}  Switch: ${agentSwitchCount}`;
+  const showLimitFlash = rateLimitActive && frame === 0;
+
+  return (
+    <Container>
+      <Graphics draw={draw} />
+      <Text text={mainText} style={HUD_TEXT_STYLE} x={10} y={6} />
+      {rateLimitActive && (
+        <Text
+          text="LIMIT"
+          style={showLimitFlash ? HUD_LIMIT_TEXT_STYLE : HUD_TEXT_STYLE}
+          x={OFFICE_WIDTH - 50}
+          y={6}
+        />
+      )}
+    </Container>
+  );
+}
+
 function AgentSprite({ agent, x, y, alpha }: AgentSpriteProps): JSX.Element {
   const [frame, setFrame] = useState(0);
   const color = AGENT_COLORS[agent.agent_type];
@@ -664,7 +847,8 @@ function drawStatusIndicator(g: any, bounce: number, statusColor: number, isErro
 interface FlyingDocumentProps {
   transfer: DocumentTransfer;
   now: number;
-  onComplete: () => void;
+  stackDepth: number;
+  onComplete: (transferId: string) => void;
 }
 
 function getAgentPosition(agentId: string): { x: number; y: number } {
@@ -675,44 +859,41 @@ function getAgentPosition(agentId: string): { x: number; y: number } {
 
 const DOCUMENT_ARC_HEIGHT = 60;
 
-function drawDocument(g: any): void {
-  g.clear();
-
-  // Document shadow
-  g.beginFill(0x000000, 0.2);
-  g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.7 + 2, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
-  g.endFill();
-
-  // Document paper
-  g.beginFill(0xffffff);
-  g.drawRect(-DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
-  g.endFill();
-
-  // Document lines (text)
-  g.beginFill(0x4a4a6a, 0.6);
-  g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.5, DOCUMENT_SIZE - 4, 2);
-  g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.3, DOCUMENT_SIZE - 6, 2);
-  g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.1, DOCUMENT_SIZE - 5, 2);
-  g.drawRect(-DOCUMENT_SIZE / 2 + 2, DOCUMENT_SIZE * 0.1, DOCUMENT_SIZE - 7, 2);
-  g.endFill();
-
-  // Fold corner
-  g.beginFill(0xe0e0e0);
-  g.moveTo(DOCUMENT_SIZE / 2 - 4, -DOCUMENT_SIZE * 0.7);
-  g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7 + 4);
-  g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7);
-  g.closePath();
-  g.endFill();
+interface ToolStamp {
+  label: string;
+  color: number;
 }
 
-function FlyingDocument({ transfer, now, onComplete }: FlyingDocumentProps): JSX.Element | null {
+function getToolStamp(toolName: string | null | undefined): ToolStamp {
+  const tool = toolName?.trim()?.toLowerCase();
+  if (!tool) return { label: "???", color: 0x6b7280 };
+  if (tool === "read") return { label: "READ", color: 0x3b82f6 };
+  if (tool === "glob" || tool === "grep" || tool === "websearch" || tool === "webfetch") return { label: "SRCH", color: 0x38bdf8 };
+  if (tool === "write") return { label: "WRIT", color: 0x22c55e };
+  if (tool === "edit" || tool === "notebookedit" || tool === "editnotebook") return { label: "EDIT", color: 0x16a34a };
+  if (tool === "bash") return { label: "BASH", color: 0xf59e0b };
+  if (tool === "todowrite" || tool === "task") return { label: "PLAN", color: 0xec4899 };
+  return { label: tool.slice(0, 4).toUpperCase(), color: 0x6b7280 };
+}
+
+const STAMP_TEXT_STYLE = new TextStyle({
+  fontFamily: '"Press Start 2P", monospace',
+  fontSize: 5,
+  fill: 0xffffff,
+  dropShadow: true,
+  dropShadowColor: 0x000000,
+  dropShadowBlur: 0,
+  dropShadowDistance: 1,
+});
+
+function FlyingDocument({ transfer, now, stackDepth, onComplete }: FlyingDocumentProps): JSX.Element | null {
   const progress = clamp01((now - transfer.startedAt) / DOCUMENT_TRANSFER_DURATION_MS);
 
   useEffect(() => {
     if (progress >= 1) {
-      onComplete();
+      onComplete(transfer.id);
     }
-  }, [progress, onComplete]);
+  }, [progress, onComplete, transfer.id]);
 
   if (progress >= 1) return null;
 
@@ -725,12 +906,67 @@ function FlyingDocument({ transfer, now, onComplete }: FlyingDocumentProps): JSX
   const baseY = lerp(from.y, to.y, eased);
   const y = baseY - Math.sin(progress * Math.PI) * DOCUMENT_ARC_HEIGHT;
 
-  const rotation = progress * Math.PI * 2;
+  const rotation = progress * Math.PI * 2 + stackDepth * 0.08;
   const scale = 1 + Math.sin(progress * Math.PI) * 0.3;
 
+  const stackOffsetX = stackDepth * 2;
+  const stackOffsetY = stackDepth * 1;
+  const stackScale = Math.max(0.7, 1 - stackDepth * 0.05);
+  const stackAlpha = Math.max(0.35, 1 - stackDepth * 0.15);
+
+  const stamp = useMemo(() => getToolStamp(transfer.toolName), [transfer.toolName]);
+
+  const draw = useCallback((g: any) => {
+    g.clear();
+
+    // Document shadow
+    g.beginFill(0x000000, 0.2);
+    g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.7 + 2, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
+    g.endFill();
+
+    // Document paper
+    g.beginFill(0xffffff);
+    g.drawRect(-DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
+    g.endFill();
+
+    // Stamp (top-left)
+    const stampW = 12;
+    const stampH = 7;
+    const stampX = -DOCUMENT_SIZE / 2 + 2;
+    const stampY = -DOCUMENT_SIZE * 0.7 + 2;
+    g.beginFill(stamp.color, 0.95);
+    g.drawRoundedRect(stampX, stampY, stampW, stampH, 2);
+    g.endFill();
+    g.lineStyle(1, 0x0f172a, 0.35);
+    g.drawRoundedRect(stampX, stampY, stampW, stampH, 2);
+    g.lineStyle(0);
+
+    // Document lines (text)
+    g.beginFill(0x4a4a6a, 0.6);
+    g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.2, DOCUMENT_SIZE - 4, 2);
+    g.drawRect(-DOCUMENT_SIZE / 2 + 2, 0, DOCUMENT_SIZE - 6, 2);
+    g.drawRect(-DOCUMENT_SIZE / 2 + 2, DOCUMENT_SIZE * 0.2, DOCUMENT_SIZE - 5, 2);
+    g.endFill();
+
+    // Fold corner
+    g.beginFill(0xe0e0e0);
+    g.moveTo(DOCUMENT_SIZE / 2 - 4, -DOCUMENT_SIZE * 0.7);
+    g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7 + 4);
+    g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7);
+    g.closePath();
+    g.endFill();
+  }, [stamp.color]);
+
   return (
-    <Container x={x} y={y} rotation={rotation} scale={scale}>
-      <Graphics draw={drawDocument} />
+    <Container x={x + stackOffsetX} y={y + stackOffsetY} rotation={rotation} scale={scale * stackScale} alpha={stackAlpha}>
+      <Graphics draw={draw} />
+      <Text
+        text={stamp.label}
+        style={STAMP_TEXT_STYLE}
+        anchor={0.5}
+        x={-DOCUMENT_SIZE / 2 + 2 + 6}
+        y={-DOCUMENT_SIZE * 0.7 + 2 + 3.5}
+      />
     </Container>
   );
 }
@@ -804,12 +1040,20 @@ const SPEECH_BUBBLE_CHECK_INTERVAL_MS = 1000;
 export function OfficeCanvas(): JSX.Element {
   const agents = useAgentStore((state) => state.agents);
   const vacationById = useAgentStore((state) => state.vacationById);
-  const documentTransfer = useAgentStore((state) => state.documentTransfer);
-  const clearDocumentTransfer = useAgentStore((state) => state.clearDocumentTransfer);
+  const errorById = useAgentStore((state) => state.errorById);
+  const documentTransfers = useAgentStore((state) => state.documentTransfers);
+  const removeDocumentTransfer = useAgentStore((state) => state.removeDocumentTransfer);
   const clearExpiredTasks = useAgentStore((state) => state.clearExpiredTasks);
+  const hudMetrics = useHudStore(useShallow((state) => state.getMetrics()));
   const [dimensions, setDimensions] = useState({ width: OFFICE_WIDTH, height: OFFICE_HEIGHT });
   const [now, setNow] = useState(() => performance.now());
   const [motionById, setMotionById] = useState<Record<string, AgentMotion>>({});
+
+  // Start HUD pruning on mount
+  useEffect(() => {
+    startHudPruning();
+    return () => stopHudPruning();
+  }, []);
 
   // Drive animations via requestAnimationFrame.
   useEffect(() => {
@@ -947,6 +1191,7 @@ export function OfficeCanvas(): JSX.Element {
                 y={desk.position[1]}
                 label={desk.label}
                 showVacation={Boolean(vacationById[desk.id])}
+                hasError={Boolean(errorById[desk.id])}
                 agentStatus={agentStatus}
                 agentType={desk.agentType}
               />
@@ -967,13 +1212,26 @@ export function OfficeCanvas(): JSX.Element {
               />
             );
           })}
-          {documentTransfer && (
-            <FlyingDocument
-              transfer={documentTransfer}
-              now={now}
-              onComplete={clearDocumentTransfer}
-            />
-          )}
+          {documentTransfers.map((transfer, index) => {
+            const stackDepth = documentTransfers.length - 1 - index; // newest = 0
+            return (
+              <FlyingDocument
+                key={transfer.id}
+                transfer={transfer}
+                now={now}
+                stackDepth={stackDepth}
+                onComplete={removeDocumentTransfer}
+              />
+            );
+          })}
+          {/* HUD overlay on top of wall */}
+          <HudDisplay
+            toolCallCount={hudMetrics.toolCallCount}
+            avgToolResponseMs={hudMetrics.avgToolResponseMs}
+            errorCount={hudMetrics.errorCount}
+            agentSwitchCount={hudMetrics.agentSwitchCount}
+            rateLimitActive={hudMetrics.rateLimitActive}
+          />
         </Container>
       </Stage>
     </div>

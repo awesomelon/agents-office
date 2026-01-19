@@ -190,9 +190,13 @@ fn summarize_current_task(entry: &LogEntry) -> String {
 fn get_desk_position(agent_type: crate::models::AgentType) -> (f32, f32) {
     use crate::models::AgentType;
     match agent_type {
-        AgentType::Researcher => (180.0, 160.0),
-        AgentType::Coder => (520.0, 160.0),
-        AgentType::Reviewer => (180.0, 360.0),
-        AgentType::Manager => (520.0, 360.0),
+        AgentType::Reader => (115.0, 160.0),
+        AgentType::Searcher => (315.0, 160.0),
+        AgentType::Writer => (515.0, 160.0),
+        AgentType::Editor => (715.0, 160.0),
+        AgentType::Runner => (115.0, 360.0),
+        AgentType::Tester => (315.0, 360.0),
+        AgentType::Planner => (515.0, 360.0),
+        AgentType::Support => (715.0, 360.0),
     }
 }

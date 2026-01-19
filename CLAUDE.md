@@ -23,7 +23,15 @@ npm run build
 
 # Rust 백엔드 타입 체크
 cd src-tauri && cargo check
+
+# Rust 테스트 실행
+cd src-tauri && cargo test
 ```
+
+## Tech Stack
+- **Frontend**: React 18 + PixiJS 7 + Zustand 5 + Vite 6 + TypeScript 5
+- **Backend**: Tauri 2.x + Rust (notify-debouncer-full for file watching)
+- **Styling**: TailwindCSS 3
 
 ## Architecture
 
@@ -47,21 +55,28 @@ cd src-tauri && cargo check
 - **models/mod.rs**: `Agent`, `LogEntry`, `AppEvent` 타입 정의
 
 ### Frontend (src/)
-- **components/office/OfficeCanvas.tsx**: PixiJS 기반 2x2 사무실 렌더링
+- **components/office/OfficeCanvas.tsx**: PixiJS 기반 4x2 사무실 렌더링 (900x500 캔버스)
   - `FlyingDocument`: 에이전트 간 서류 전달 애니메이션 (포물선 궤적, 회전)
   - `MonitorScreen`: 에이전트 상태별 모니터 화면 동적 변화
   - `AgentSprite`: 에이전트 캐릭터 렌더링 및 바운스 애니메이션
-- **hooks/useTauriEvents.ts**: `listen("app-event")`로 Tauri 이벤트 구독, 에이전트 전환 감지
+  - `HudDisplay`: 상단 HUD 바 (툴콜/에러/에이전트전환 카운트, 레이트리밋 표시)
+  - `AlertLight`: 에러 발생 시 책상 위 빨간 경고등 깜빡임
+  - `QueueIndicator`: 레이트리밋 시 모래시계 + 대기열 점 애니메이션
+- **hooks/useTauriEvents.ts**: `listen("app-event")`로 Tauri 이벤트 구독, 에이전트 전환 감지, HUD 메트릭 기록
 - **store/agentStore.ts**: Zustand 상태 관리
   - `documentTransfer`: 서류 전달 애니메이션 상태 (fromAgentId, toAgentId, startedAt)
   - `lastActiveAgentId`: 마지막 활성 에이전트 추적 (서류 전달 트리거용)
   - `lastTaskUpdateById`: 에이전트별 마지막 task 업데이트 시간 (말풍선 타임아웃용)
+  - `errorById`: 에이전트별 에러 상태 추적 (경고등 표시용)
+- **store/hudStore.ts**: HUD 메트릭 상태 관리
+  - 60초 슬라이딩 윈도우로 tool_call, error, agent_switch 이벤트 추적
+  - `rateLimitActive`: 레이트리밋 활성 상태
 - **store/logStore.ts**: 로그 엔트리 관리
-- **types/index.ts**: 타입 정의, `DESK_CONFIGS` (2x2 그리드 배치), `AGENT_COLORS`
+- **types/index.ts**: 타입 정의, `DESK_CONFIGS` (4x2 그리드 배치), `AGENT_COLORS`
 
 ### Type Synchronization (중요)
 Rust와 TypeScript 타입은 수동 동기화 필요:
-- `AgentType`: researcher, coder, reviewer, manager
+- `AgentType`: reader, searcher, writer, editor, runner, tester, planner, support
 - `AgentStatus`: idle, working, thinking, passing, error
 - `LogEntryType`: tool_call, tool_result, message, error, todo_update, session_start, session_end
 
@@ -80,17 +95,21 @@ function isTauriEnv(): boolean {
 
 ### Agent-Tool Mapping
 `log_parser.rs`의 `determine_agent_type()`:
-- Read/Glob/Grep → Researcher (파란색)
-- Edit/Write → Coder (초록색)
-- Bash → Reviewer (노란색)
-- TodoWrite/Task → Manager (분홍색)
+- Read → Reader (파란색 0x60a5fa)
+- Glob/Grep/WebSearch/WebFetch → Searcher (하늘색 0x38bdf8)
+- Write → Writer (초록색 0x4ade80)
+- Edit/NotebookEdit → Editor (진초록 0x22c55e)
+- Bash (일반) → Runner (노란색 0xfbbf24)
+- Bash (git/test/npm/pnpm/yarn/cargo) → Tester (주황색 0xf97316)
+- TodoWrite/Task → Planner (분홍색 0xf472b6)
+- AskUserQuestion/Error → Support (보라색 0xa78bfa)
 
 ### Office Layout
-2x2 그리드 배치 (`DESK_CONFIGS` in types/index.ts):
+4x2 그리드 배치 (`DESK_CONFIGS` in types/index.ts, 900x500 캔버스):
 ```
-Researcher | Coder
------------+--------
-Reviewer   | Manager
+Reader(115,160) | Searcher(315,160) | Writer(515,160)  | Editor(715,160)
+----------------+-------------------+------------------+------------------
+Runner(115,360) | Tester(315,360)   | Planner(515,360) | Support(715,360)
 ```
 
 ### Document Transfer Animation
@@ -114,3 +133,26 @@ Reviewer   | Manager
 
 ### Speech Bubble Timeout
 `OfficeCanvas`에서 `clearExpiredTasks()`를 1초마다 호출하여 5초 이상 업데이트 없는 에이전트의 말풍선을 자동으로 숨김. 타임아웃 값은 `SPEECH_BUBBLE_TIMEOUT_MS` 상수로 조절.
+
+### HUD (Heads-Up Display)
+캔버스 상단에 반투명 바로 실시간 지표 표시:
+- **Calls**: 60초 내 tool_call 이벤트 수
+- **Err**: 60초 내 에러 발생 수
+- **Switch**: 60초 내 에이전트 전환 수
+- **LIMIT**: 레이트리밋 발생 시 깜빡임 표시
+
+`hudStore.ts`가 이벤트를 60초 슬라이딩 윈도우로 추적하며, 1초마다 오래된 데이터를 자동 정리.
+
+### Error Alert Light
+에러 발생 시 해당 에이전트 책상 모니터 우측에 빨간 경고등이 200ms 주기로 깜빡임:
+- `useTauriEvents.ts`에서 `entry_type === "error"` 감지 시 `setAgentError(agentId, true)` 호출
+- 이후 tool_call/tool_result 성공 시 `setAgentError(agentId, false)`로 해제
+- `AlertLight` 컴포넌트가 빨간 불빛 + glow 효과 렌더링
+
+### Rate Limit Visual Effects
+레이트리밋 감지 시 시각적 피드백:
+1. **휴가 표지판**: 기존 VacationSign 컴포넌트 표시
+2. **대기열 표시**: QueueIndicator 컴포넌트 - 모래시계 아이콘 + 점 3개 순차 깜빡임 (500ms 주기)
+3. **HUD 강조**: "LIMIT" 텍스트 빨간색 깜빡임
+
+레이트리밋 패턴 감지: `isLimitReachedMessage()` 함수가 "rate_limit", "hit your limit" 등 패턴 매칭.

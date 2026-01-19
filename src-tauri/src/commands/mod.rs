@@ -12,13 +12,13 @@ pub fn get_claude_home() -> Result<String, String> {
 #[tauri::command]
 pub fn get_agents() -> Vec<Agent> {
     vec![
-        Agent::new(
-            "researcher".to_string(),
-            AgentType::Researcher,
-            (180.0, 160.0),
-        ),
-        Agent::new("coder".to_string(), AgentType::Coder, (520.0, 160.0)),
-        Agent::new("reviewer".to_string(), AgentType::Reviewer, (180.0, 360.0)),
-        Agent::new("manager".to_string(), AgentType::Manager, (520.0, 360.0)),
+        Agent::new("reader".to_string(), AgentType::Reader, (115.0, 160.0)),
+        Agent::new("searcher".to_string(), AgentType::Searcher, (315.0, 160.0)),
+        Agent::new("writer".to_string(), AgentType::Writer, (515.0, 160.0)),
+        Agent::new("editor".to_string(), AgentType::Editor, (715.0, 160.0)),
+        Agent::new("runner".to_string(), AgentType::Runner, (115.0, 360.0)),
+        Agent::new("tester".to_string(), AgentType::Tester, (315.0, 360.0)),
+        Agent::new("planner".to_string(), AgentType::Planner, (515.0, 360.0)),
+        Agent::new("support".to_string(), AgentType::Support, (715.0, 360.0)),
     ]
 }

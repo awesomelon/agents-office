@@ -4,15 +4,19 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentType {
-    Researcher,
-    Coder,
-    Reviewer,
-    Manager,
+    Reader,
+    Searcher,
+    Writer,
+    Editor,
+    Runner,
+    Tester,
+    Planner,
+    Support,
 }
 
 impl Default for AgentType {
     fn default() -> Self {
-        Self::Coder
+        Self::Editor
     }
 }
 

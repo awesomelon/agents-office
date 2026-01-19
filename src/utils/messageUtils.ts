@@ -80,10 +80,14 @@ function getStatusSummaryKo(agentType: AgentType, status: AgentStatus): string {
 
 function getAgentLabelKo(agentType: AgentType): string {
   const label: Record<AgentType, string> = {
-    researcher: "리서처",
-    coder: "코더",
-    reviewer: "리뷰어",
-    manager: "매니저",
+    reader: "리더",
+    searcher: "서처",
+    writer: "라이터",
+    editor: "에디터",
+    runner: "러너",
+    tester: "테스터",
+    planner: "플래너",
+    support: "서포트",
   };
   return label[agentType] ?? "에이전트";
 }
@@ -186,14 +190,18 @@ function extractTarget(rawTask: string): string | null {
 }
 
 function extractTargetAgent(rawTask: string): string | null {
-  const agentMatch = rawTask.match(/to\s+(researcher|coder|reviewer|manager)/i);
+  const agentMatch = rawTask.match(/to\s+(reader|searcher|writer|editor|runner|tester|planner|support)/i);
   if (!agentMatch) return null;
 
   const label: Record<string, string> = {
-    researcher: "리서처",
-    coder: "코더",
-    reviewer: "리뷰어",
-    manager: "매니저",
+    reader: "리더",
+    searcher: "서처",
+    writer: "라이터",
+    editor: "에디터",
+    runner: "러너",
+    tester: "테스터",
+    planner: "플래너",
+    support: "서포트",
   };
 
   const key = agentMatch[1].toLowerCase();

@@ -2,15 +2,21 @@ import { create } from "zustand";
 import type { Agent, AgentStatus } from "../types";
 
 export interface DocumentTransfer {
+  id: string;
   fromAgentId: string;
   toAgentId: string;
   startedAt: number;
+  toolName?: string | null;
 }
+
+const MAX_DOCUMENT_TRANSFERS = 8;
+let documentTransferSeq = 0;
 
 interface AgentState {
   agents: Record<string, Agent>;
   vacationById: Record<string, boolean>;
-  documentTransfer: DocumentTransfer | null;
+  errorById: Record<string, boolean>; // track error state per agent
+  documentTransfers: DocumentTransfer[];
   lastActiveAgentId: string | null;
   lastTaskUpdateById: Record<string, number>; // timestamp when task was last updated
   initializeAgents: () => void;
@@ -18,8 +24,10 @@ interface AgentState {
   setAgentStatus: (id: string, status: AgentStatus) => void;
   setAgentTask: (id: string, task: string | null) => void;
   setAgentVacation: (id: string, on: boolean) => void;
-  startDocumentTransfer: (fromAgentId: string, toAgentId: string) => void;
-  clearDocumentTransfer: () => void;
+  setAgentError: (id: string, hasError: boolean) => void;
+  startDocumentTransfer: (fromAgentId: string, toAgentId: string, toolName?: string | null) => void;
+  removeDocumentTransfer: (id: string) => void;
+  clearDocumentTransfers: () => void;
   setLastActiveAgent: (id: string) => void;
   resetAllToIdle: () => void;
   clearExpiredTasks: (timeoutMs: number) => void;
@@ -28,14 +36,15 @@ interface AgentState {
 export const useAgentStore = create<AgentState>((set) => ({
   agents: {},
   vacationById: {},
-  documentTransfer: null,
+  errorById: {},
+  documentTransfers: [],
   lastActiveAgentId: null,
   lastTaskUpdateById: {},
 
   initializeAgents: () => {
     // Keep empty by default. Agents will appear only when the backend emits an update.
     // (We still keep the function for compatibility.)
-    set({ agents: {}, vacationById: {}, documentTransfer: null, lastActiveAgentId: null, lastTaskUpdateById: {} });
+    set({ agents: {}, vacationById: {}, errorById: {}, documentTransfers: [], lastActiveAgentId: null, lastTaskUpdateById: {} });
   },
 
   updateAgent: (agent) => {
@@ -100,18 +109,34 @@ export const useAgentStore = create<AgentState>((set) => ({
     }));
   },
 
-  startDocumentTransfer: (fromAgentId, toAgentId) => {
-    set({
-      documentTransfer: {
-        fromAgentId,
-        toAgentId,
-        startedAt: performance.now(),
+  setAgentError: (id, hasError) => {
+    set((state) => ({
+      errorById: {
+        ...state.errorById,
+        [id]: hasError,
       },
-    });
+    }));
   },
 
-  clearDocumentTransfer: () => {
-    set({ documentTransfer: null });
+  startDocumentTransfer: (fromAgentId, toAgentId, toolName) => {
+    const startedAt = performance.now();
+    const id = `${Date.now()}-${documentTransferSeq++}`;
+    set((state) => ({
+      documentTransfers: [
+        ...state.documentTransfers,
+        { id, fromAgentId, toAgentId, startedAt, toolName: toolName ?? null },
+      ].slice(-MAX_DOCUMENT_TRANSFERS),
+    }));
+  },
+
+  removeDocumentTransfer: (id) => {
+    set((state) => ({
+      documentTransfers: state.documentTransfers.filter((t) => t.id !== id),
+    }));
+  },
+
+  clearDocumentTransfers: () => {
+    set({ documentTransfers: [] });
   },
 
   setLastActiveAgent: (id) => {
@@ -124,7 +149,7 @@ export const useAgentStore = create<AgentState>((set) => ({
       for (const [id, agent] of Object.entries(state.agents)) {
         updatedAgents[id] = { ...agent, status: "idle", current_task: null };
       }
-      return { agents: updatedAgents, lastTaskUpdateById: {} };
+      return { agents: updatedAgents, lastTaskUpdateById: {}, errorById: {} };
     });
   },
 
