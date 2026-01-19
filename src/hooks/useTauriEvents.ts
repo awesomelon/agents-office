@@ -3,12 +3,23 @@ import { listen } from "@tauri-apps/api/event";
 import { useAgentStore, useLogStore } from "../store";
 import type { AppEvent, LogEntry } from "../types";
 
+// Tauri 환경인지 체크 (브라우저에서 npm run dev 실행 시 false)
+function isTauriEnv(): boolean {
+  return typeof window !== "undefined" && "__TAURI__" in window;
+}
+
 export function useTauriEvents() {
   const { updateAgent, setAgentVacation } = useAgentStore();
   const { addLog, setSessionId, setWatcherStatus } = useLogStore();
   const lastActiveAgentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // 브라우저 환경에서는 Tauri 이벤트 구독하지 않음
+    if (!isTauriEnv()) {
+      console.log("[useTauriEvents] Not in Tauri environment, skipping event listener");
+      return;
+    }
+
     // Listen for app events from Tauri
     const unlisten = listen<AppEvent>("app-event", (event) => {
       const appEvent = event.payload;
