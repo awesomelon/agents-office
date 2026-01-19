@@ -86,4 +86,6 @@ pub enum AppEvent {
     SessionStart { session_id: String },
     SessionEnd { session_id: String },
     WatcherStatus { active: bool, path: String },
+    /// Batch update for performance - sends multiple logs and agents in one IPC call
+    BatchUpdate { logs: Vec<LogEntry>, agents: Vec<Agent> },
 }

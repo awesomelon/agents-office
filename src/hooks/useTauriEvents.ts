@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAgentStore, useLogStore, useHudStore } from "../store";
-import type { AppEvent, LogEntry } from "../types";
+import type { Agent, AppEvent, LogEntry } from "../types";
 
 // Tauri 환경인지 체크 (브라우저에서 npm run dev 실행 시 false)
 function isTauriEnv(): boolean {
@@ -9,9 +9,18 @@ function isTauriEnv(): boolean {
 }
 
 export function useTauriEvents(): void {
-  const { updateAgent, setAgentVacation, setAgentError, startDocumentTransfer, setLastActiveAgent } = useAgentStore();
-  const { addLog, setSessionId, setWatcherStatus } = useLogStore();
-  const { recordToolCall, recordToolResult, recordError, recordAgentSwitch, setRateLimitActive } = useHudStore();
+  const {
+    updateAgent,
+    updateAgentsBatch,
+    setAgentVacation,
+    setAgentVacationsBatch,
+    setAgentError,
+    setAgentErrorsBatch,
+    startDocumentTransfer,
+    setLastActiveAgent,
+  } = useAgentStore();
+  const { addLog, addLogsBatch, setSessionId, setWatcherStatus } = useLogStore();
+  const { recordToolCall, recordToolResult, recordError, recordAgentSwitch, recordEventsBatch, setRateLimitActive } = useHudStore();
   const lastActiveAgentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -55,30 +64,43 @@ export function useTauriEvents(): void {
         case "WatcherStatus":
           setWatcherStatus(appEvent.payload.active, appEvent.payload.path);
           break;
+
+        case "BatchUpdate":
+          handleBatchUpdate(appEvent.payload.logs, appEvent.payload.agents, {
+            addLogsBatch,
+            updateAgentsBatch,
+            setAgentVacationsBatch,
+            setAgentErrorsBatch,
+            startDocumentTransfer,
+            setLastActiveAgent,
+            lastActiveAgentIdRef,
+            recordEventsBatch,
+            setRateLimitActive,
+          });
+          break;
       }
     });
 
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [updateAgent, addLog, setSessionId, setWatcherStatus, setAgentVacation, setAgentError, startDocumentTransfer, setLastActiveAgent, recordToolCall, recordToolResult, recordError, recordAgentSwitch, setRateLimitActive]);
+  }, [updateAgent, updateAgentsBatch, addLog, addLogsBatch, setSessionId, setWatcherStatus, setAgentVacation, setAgentVacationsBatch, setAgentError, setAgentErrorsBatch, startDocumentTransfer, setLastActiveAgent, recordToolCall, recordToolResult, recordError, recordAgentSwitch, recordEventsBatch, setRateLimitActive]);
 }
 
-const LIMIT_REACHED_PATTERNS: RegExp[] = [
-  // Explicit phrases
-  /\blimit reached\b/i,
-  /you['’]ve hit your limit\b/i,
-  /\bhit your limit\b/i,
-
-  // Observed Claude debug patterns (rate limit)
-  /\brate_limit_error\b/i,
-  /\brate\s*limit\b/i,
-  /exceed\s+your\s+account['’]?s\s+rate\s+limit/i,
-  /non-streaming\s+fallback:\s*429/i,
-];
+// Optimized: Single regex pattern for rate limit detection
+const LIMIT_REACHED_PATTERN = /limit\s*reached|hit\s+your\s+limit|rate[_\s]*limit|429/i;
 
 function isLimitReachedMessage(content: string): boolean {
-  return LIMIT_REACHED_PATTERNS.some((re) => re.test(content));
+  // Fast path: quick substring check before regex
+  const lower = content.toLowerCase();
+  if (!lower.includes("limit") && !lower.includes("429")) {
+    return false;
+  }
+  return LIMIT_REACHED_PATTERN.test(content);
+}
+
+function isToolActivity(entryType: string): boolean {
+  return entryType === "tool_call" || entryType === "tool_result";
 }
 
 interface LogEntryHandlers {
@@ -114,56 +136,61 @@ function handleLogEntry(entry: LogEntry, handlers: LogEntryHandlers): void {
 
   const inferredAgentId = inferAgentId(entry);
   const agentId = inferredAgentId ?? lastActiveAgentIdRef.current;
+  const isActivity = isToolActivity(entry.entry_type);
 
-  // HUD: Record tool calls
-  if (entry.entry_type === "tool_call") {
-    recordToolCall();
-  }
-  if (entry.entry_type === "tool_result") {
-    recordToolResult();
-  }
+  // HUD: Record tool events
+  if (entry.entry_type === "tool_call") recordToolCall();
+  if (entry.entry_type === "tool_result") recordToolResult();
 
-  // HUD: Handle rate limit detection
+  // Rate limit detection and vacation state
   if (isLimitReachedMessage(entry.content)) {
     setRateLimitActive(true);
-    if (agentId) {
-      setAgentVacation(agentId, true);
-    }
-  } else if (entry.entry_type === "tool_call" || entry.entry_type === "tool_result") {
-    // Activity resumes, rate limit over
+    if (agentId) setAgentVacation(agentId, true);
+  } else if (isActivity) {
     setRateLimitActive(false);
-    if (agentId) {
-      setAgentVacation(agentId, false);
-    }
+    if (agentId) setAgentVacation(agentId, false);
   }
 
-  // HUD: Record errors and set agent error state
+  // Error state tracking
   if (entry.entry_type === "error") {
     recordError();
-    if (agentId) {
-      setAgentError(agentId, true);
-    }
-  } else if (agentId && (entry.entry_type === "tool_call" || entry.entry_type === "tool_result")) {
-    // Clear error on successful tool activity
+    if (agentId) setAgentError(agentId, true);
+  } else if (agentId && isActivity) {
     setAgentError(agentId, false);
   }
 
-  // Handle document transfer (only on tool_call with valid agent)
+  // Document transfer tracking (only on tool_call with valid agent)
   if (entry.entry_type === "tool_call" && inferredAgentId) {
     const previousAgentId = lastActiveAgentIdRef.current;
-
     if (previousAgentId && previousAgentId !== inferredAgentId) {
       startDocumentTransfer(previousAgentId, inferredAgentId, entry.tool_name);
-      recordAgentSwitch(); // HUD: Record agent switch
+      recordAgentSwitch();
     }
-
     lastActiveAgentIdRef.current = inferredAgentId;
     setLastActiveAgent(inferredAgentId);
   } else if (inferredAgentId) {
-    // Track last active agent for error attribution
     lastActiveAgentIdRef.current = inferredAgentId;
   }
 }
+
+// Tool name to agent ID mapping
+const TOOL_TO_AGENT: Record<string, string> = {
+  read: "reader",
+  glob: "searcher",
+  grep: "searcher",
+  websearch: "searcher",
+  webfetch: "searcher",
+  write: "writer",
+  edit: "editor",
+  notebookedit: "editor",
+  editnotebook: "editor",
+  todowrite: "planner",
+  task: "planner",
+  askuserquestion: "support",
+};
+
+// Keywords that indicate tester agent for bash commands
+const TESTER_KEYWORDS = ["git", "test", "npm", "pnpm", "yarn", "cargo"];
 
 function inferAgentId(entry: LogEntry): string | null {
   const explicit = entry.agent_id?.trim();
@@ -172,44 +199,103 @@ function inferAgentId(entry: LogEntry): string | null {
   const tool = entry.tool_name?.trim()?.toLowerCase();
   if (!tool) return null;
 
-  // Reader: file reading
-  if (tool === "read") {
-    return "reader";
-  }
-
-  // Searcher: search and web tools
-  if (tool === "glob" || tool === "grep" || tool === "websearch" || tool === "webfetch") {
-    return "searcher";
-  }
-
-  // Writer: file creation
-  if (tool === "write") {
-    return "writer";
-  }
-
-  // Editor: code modification
-  if (tool === "edit" || tool === "notebookedit" || tool === "editnotebook") {
-    return "editor";
-  }
+  // Direct mapping lookup
+  const mapped = TOOL_TO_AGENT[tool];
+  if (mapped) return mapped;
 
   // Bash: context-dependent (Runner vs Tester)
   if (tool === "bash") {
     const content = entry.content.toLowerCase();
-    if (content.includes("git") || content.includes("test") || content.includes("npm") || content.includes("pnpm") || content.includes("yarn") || content.includes("cargo")) {
-      return "tester";
-    }
-    return "runner";
-  }
-
-  // Planner: task management
-  if (tool === "todowrite" || tool === "task") {
-    return "planner";
-  }
-
-  // Support: user questions
-  if (tool === "askuserquestion") {
-    return "support";
+    const isTesterCommand = TESTER_KEYWORDS.some((keyword) => content.includes(keyword));
+    return isTesterCommand ? "tester" : "runner";
   }
 
   return "editor";
+}
+
+// Batch update handlers
+interface BatchUpdateHandlers {
+  addLogsBatch: (entries: LogEntry[]) => void;
+  updateAgentsBatch: (agents: Agent[]) => void;
+  setAgentVacationsBatch: (vacations: Record<string, boolean>) => void;
+  setAgentErrorsBatch: (errors: Record<string, boolean>) => void;
+  startDocumentTransfer: (fromAgentId: string, toAgentId: string, toolName?: string | null) => void;
+  setLastActiveAgent: (id: string) => void;
+  lastActiveAgentIdRef: { current: string | null };
+  recordEventsBatch: (entries: LogEntry[], agentSwitchCount: number) => void;
+  setRateLimitActive: (active: boolean) => void;
+}
+
+function handleBatchUpdate(logs: LogEntry[], agents: Agent[], handlers: BatchUpdateHandlers): void {
+  const {
+    addLogsBatch,
+    updateAgentsBatch,
+    setAgentVacationsBatch,
+    setAgentErrorsBatch,
+    startDocumentTransfer,
+    setLastActiveAgent,
+    lastActiveAgentIdRef,
+    recordEventsBatch,
+    setRateLimitActive,
+  } = handlers;
+
+  // Batch store updates
+  addLogsBatch(logs);
+  updateAgentsBatch(agents);
+
+  // Process logs for vacation/error states and document transfers
+  const vacations: Record<string, boolean> = {};
+  const errors: Record<string, boolean> = {};
+  let agentSwitchCount = 0;
+  let rateLimitDetected = false;
+  let activityResumed = false;
+
+  for (const entry of logs) {
+    const inferredAgentId = inferAgentId(entry);
+    const agentId = inferredAgentId ?? lastActiveAgentIdRef.current;
+    const isActivity = isToolActivity(entry.entry_type);
+
+    // Rate limit detection
+    if (isLimitReachedMessage(entry.content)) {
+      rateLimitDetected = true;
+      if (agentId) vacations[agentId] = true;
+    } else if (isActivity) {
+      activityResumed = true;
+      if (agentId) vacations[agentId] = false;
+    }
+
+    // Error state tracking
+    if (entry.entry_type === "error" && agentId) {
+      errors[agentId] = true;
+    } else if (agentId && isActivity) {
+      errors[agentId] = false;
+    }
+
+    // Document transfer tracking
+    if (entry.entry_type === "tool_call" && inferredAgentId) {
+      const previousAgentId = lastActiveAgentIdRef.current;
+      if (previousAgentId && previousAgentId !== inferredAgentId) {
+        startDocumentTransfer(previousAgentId, inferredAgentId, entry.tool_name);
+        agentSwitchCount++;
+      }
+      lastActiveAgentIdRef.current = inferredAgentId;
+      setLastActiveAgent(inferredAgentId);
+    } else if (inferredAgentId) {
+      lastActiveAgentIdRef.current = inferredAgentId;
+    }
+  }
+
+  // Batch update states
+  setAgentVacationsBatch(vacations);
+  setAgentErrorsBatch(errors);
+
+  // Update rate limit status (latest state wins)
+  if (rateLimitDetected) {
+    setRateLimitActive(true);
+  } else if (activityResumed) {
+    setRateLimitActive(false);
+  }
+
+  // Batch record HUD events
+  recordEventsBatch(logs, agentSwitchCount);
 }

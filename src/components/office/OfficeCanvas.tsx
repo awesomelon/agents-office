@@ -1,5 +1,5 @@
 import { Stage, Container, Graphics, Text } from "@pixi/react";
-import { useCallback, useState, useEffect, useMemo } from "react";
+import { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import { TextStyle } from "pixi.js";
 import { useShallow } from "zustand/shallow";
 import { useAgentStore, useHudStore, startHudPruning, stopHudPruning, type DocumentTransfer } from "../../store";
@@ -10,6 +10,8 @@ import { formatAgentMessage } from "../../utils";
 // Canvas dimensions
 const OFFICE_WIDTH = 900;
 const OFFICE_HEIGHT = 500;
+
+type ViewportRect = { x: number; y: number; width: number; height: number };
 
 // Floor configuration
 const FLOOR_START_Y = 60;
@@ -85,20 +87,32 @@ const HAIR_COLORS: Record<AgentType, number> = {
   support: 0x5a2a6a, // Purple
 };
 
-function OfficeBackground(): JSX.Element {
+function OfficeBackground({ viewport }: { viewport: ViewportRect }): JSX.Element {
   const draw = useCallback((g: any) => {
     g.clear();
 
+    const viewX = viewport.x;
+    const viewY = viewport.y;
+    const viewW = viewport.width;
+    const viewH = viewport.height;
+    const viewRight = viewX + viewW;
+    const viewBottom = viewY + viewH;
+
     // Floor base
     g.beginFill(0x8b6b4a);
-    g.drawRect(0, 0, OFFICE_WIDTH, OFFICE_HEIGHT);
+    g.drawRect(viewX, viewY, viewW, viewH);
     g.endFill();
 
     // Brick pattern floor
-    for (let y = FLOOR_START_Y; y < OFFICE_HEIGHT; y += BRICK_HEIGHT) {
+    const floorStartY = Math.max(FLOOR_START_Y, viewY);
+    for (let y = floorStartY; y < viewBottom; y += BRICK_HEIGHT) {
       const offset = Math.floor(y / BRICK_HEIGHT) % 2 === 0 ? 0 : BRICK_WIDTH / 2;
-      for (let x = -BRICK_WIDTH / 2 + offset; x < OFFICE_WIDTH + BRICK_WIDTH; x += BRICK_WIDTH) {
-        const shade = ((x + y) % 3 === 0) ? 0x7a5c3a : 0x8b6b4a;
+      const baseX = -BRICK_WIDTH / 2 + offset;
+      const kStart = Math.floor((viewX - BRICK_WIDTH - baseX) / BRICK_WIDTH);
+      const xStart = baseX + kStart * BRICK_WIDTH;
+      for (let x = xStart; x < viewRight + BRICK_WIDTH; x += BRICK_WIDTH) {
+        const mod = ((x + y) % 3 + 3) % 3;
+        const shade = mod === 0 ? 0x7a5c3a : 0x8b6b4a;
         g.beginFill(shade);
         g.drawRect(x, y, BRICK_WIDTH - 1, BRICK_HEIGHT - 1);
         g.endFill();
@@ -107,36 +121,56 @@ function OfficeBackground(): JSX.Element {
 
     // Brick grout lines
     g.lineStyle(1, 0x5a4a3a, 0.3);
-    for (let y = FLOOR_START_Y; y < OFFICE_HEIGHT; y += BRICK_HEIGHT) {
-      g.moveTo(0, y);
-      g.lineTo(OFFICE_WIDTH, y);
+    for (let y = floorStartY; y < viewBottom; y += BRICK_HEIGHT) {
+      g.moveTo(viewX, y);
+      g.lineTo(viewRight, y);
     }
 
     // Wall
     g.lineStyle(0);
     g.beginFill(0x5a4a6a);
-    g.drawRect(0, 0, OFFICE_WIDTH, WALL_HEIGHT);
+    g.drawRect(viewX, viewY, viewW, WALL_HEIGHT - viewY);
     g.endFill();
 
     // Wall texture
     g.beginFill(0x6a5a7a, 0.3);
-    for (let x = 0; x < OFFICE_WIDTH; x += 8) {
-      g.drawRect(x, 0, 4, WALL_HEIGHT);
+    const stripeStart = Math.floor(viewX / 8) * 8;
+    for (let x = stripeStart; x < viewRight; x += 8) {
+      g.drawRect(x, viewY, 4, WALL_HEIGHT - viewY);
     }
     g.endFill();
 
-    // Windows (4 windows for wider canvas)
-    drawWindows(g, [140, 320, 500, 680]);
+    // Decorative plants
+    g.lineStyle(0);
+    drawRepeatedDecorations(g, viewport);
+  }, [viewport]);
+
+  return <Graphics draw={draw} />;
+}
+
+function drawRepeatedDecorations(g: any, viewport: ViewportRect): void {
+  const viewX = viewport.x;
+  const viewRight = viewport.x + viewport.width;
+
+  // Repeat original 900px-wide layout horizontally.
+  const segStart = Math.floor((viewX - OFFICE_WIDTH) / OFFICE_WIDTH);
+  const segEnd = Math.floor((viewRight + OFFICE_WIDTH) / OFFICE_WIDTH);
+
+  const baseWindowPositions = [140, 320, 500, 680];
+
+  for (let seg = segStart; seg <= segEnd; seg++) {
+    const ox = seg * OFFICE_WIDTH;
+
+    // Windows
+    drawWindows(g, baseWindowPositions.map((p) => p + ox));
 
     // Decorative plants
     g.lineStyle(0);
-    drawPlant(g, 30, OFFICE_HEIGHT - 30);
-    drawPlant(g, OFFICE_WIDTH - 30, OFFICE_HEIGHT - 30);
-    drawPlant(g, 30, 90);
-    drawPlant(g, OFFICE_WIDTH - 30, 90);
-  }, []);
-
-  return <Graphics draw={draw} />;
+    drawPlant(g, ox + 30, OFFICE_HEIGHT - 30);
+    drawPlant(g, ox + OFFICE_WIDTH - 30, OFFICE_HEIGHT - 30);
+    drawPlant(g, ox + 30, 90);
+    drawPlant(g, ox + OFFICE_WIDTH - 30, 90);
+  }
 }
 
 function drawWindows(g: any, positions: number[]): void {
@@ -1038,16 +1072,24 @@ const SPEECH_BUBBLE_TIMEOUT_MS = 5000;
 const SPEECH_BUBBLE_CHECK_INTERVAL_MS = 1000;
 
 export function OfficeCanvas(): JSX.Element {
-  const agents = useAgentStore((state) => state.agents);
-  const vacationById = useAgentStore((state) => state.vacationById);
-  const errorById = useAgentStore((state) => state.errorById);
-  const documentTransfers = useAgentStore((state) => state.documentTransfers);
+  // Consolidated Zustand selectors using useShallow to reduce re-renders
+  const { agents, vacationById, errorById, documentTransfers } = useAgentStore(
+    useShallow((state) => ({
+      agents: state.agents,
+      vacationById: state.vacationById,
+      errorById: state.errorById,
+      documentTransfers: state.documentTransfers,
+    }))
+  );
   const removeDocumentTransfer = useAgentStore((state) => state.removeDocumentTransfer);
   const clearExpiredTasks = useAgentStore((state) => state.clearExpiredTasks);
   const hudMetrics = useHudStore(useShallow((state) => state.getMetrics()));
   const [dimensions, setDimensions] = useState({ width: OFFICE_WIDTH, height: OFFICE_HEIGHT });
-  const [now, setNow] = useState(() => performance.now());
   const [motionById, setMotionById] = useState<Record<string, AgentMotion>>({});
+
+  // Use ref for `now` to avoid triggering re-renders on every RAF tick
+  const nowRef = useRef(performance.now());
+  const [, forceUpdate] = useState(0);
 
   // Start HUD pruning on mount
   useEffect(() => {
@@ -1055,16 +1097,30 @@ export function OfficeCanvas(): JSX.Element {
     return () => stopHudPruning();
   }, []);
 
-  // Drive animations via requestAnimationFrame.
+  // Drive animations via requestAnimationFrame - only update when animations active
   useEffect(() => {
     let raf = 0;
+    let lastUpdateTime = performance.now();
+
     const tick = (t: number) => {
-      setNow(t);
+      nowRef.current = t;
+
+      // Check if any animations are active
+      const hasActiveDocTransfers = documentTransfers.length > 0;
+      const hasEnteringMotions = Object.values(motionById).some((m) => m.phase === "entering");
+      const needsUpdate = hasActiveDocTransfers || hasEnteringMotions;
+
+      // Only trigger re-render when animations are active (throttled to ~30fps)
+      if (needsUpdate && t - lastUpdateTime > 33) {
+        lastUpdateTime = t;
+        forceUpdate((n) => n + 1);
+      }
+
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [documentTransfers.length, motionById]);
 
   // Clear speech bubbles after timeout
   useEffect(() => {
@@ -1076,7 +1132,7 @@ export function OfficeCanvas(): JSX.Element {
 
   // Start entering transition when agent becomes visible, or set absent when hidden.
   useEffect(() => {
-    const ts = now;
+    const ts = nowRef.current;
     const start = { x: ENTRY_START_X, y: ENTRY_START_Y };
 
     setMotionById((prev) => {
@@ -1115,11 +1171,11 @@ export function OfficeCanvas(): JSX.Element {
 
       return next;
     });
-  }, [agents, now, vacationById]);
+  }, [agents, vacationById]);
 
-  // Finalize entering motion (entering->present).
+  // Finalize entering motion (entering->present) - triggered by forceUpdate
   useEffect(() => {
-    const ts = now;
+    const ts = nowRef.current;
     setMotionById((prev) => {
       let changed = false;
       const next: Record<string, AgentMotion> = { ...prev };
@@ -1136,7 +1192,7 @@ export function OfficeCanvas(): JSX.Element {
 
       return changed ? next : prev;
     });
-  }, [now]);
+  });
 
   useEffect(() => {
     function updateDimensions(): void {
@@ -1163,6 +1219,16 @@ export function OfficeCanvas(): JSX.Element {
   const offsetX = (dimensions.width - OFFICE_WIDTH * scale) / 2;
   const offsetY = (dimensions.height - OFFICE_HEIGHT * scale) / 2;
 
+  const viewport = useMemo<ViewportRect>(() => {
+    // Convert stage pixels -> local (unscaled) coordinates of the office Container.
+    return {
+      x: -offsetX / scale,
+      y: -offsetY / scale,
+      width: dimensions.width / scale,
+      height: dimensions.height / scale,
+    };
+  }, [dimensions.height, dimensions.width, offsetX, offsetY, scale]);
+
   const visibleAgents = useMemo(() => {
     return Object.values(agents).filter((agent) => {
       const phase = motionById[agent.id]?.phase ?? "absent";
@@ -1180,7 +1246,7 @@ export function OfficeCanvas(): JSX.Element {
         options={{ backgroundColor: 0x1a1a2e, antialias: true }}
       >
         <Container x={offsetX} y={offsetY} scale={scale}>
-          <OfficeBackground />
+          <OfficeBackground viewport={viewport} />
           {DESK_CONFIGS.map((desk) => {
             const agent = agents[desk.id];
             const agentStatus: AgentStatus = agent?.status ?? "idle";
@@ -1200,7 +1266,7 @@ export function OfficeCanvas(): JSX.Element {
           {visibleAgents.map((agent) => {
             const target = { x: agent.desk_position[0], y: agent.desk_position[1] - 55 };
             const motion = motionById[agent.id];
-            const state = motion ? computeMotionState(motion, now) : { x: target.x, y: target.y, alpha: 1 };
+            const state = motion ? computeMotionState(motion, nowRef.current) : { x: target.x, y: target.y, alpha: 1 };
 
             return (
               <AgentSprite
@@ -1218,7 +1284,7 @@ export function OfficeCanvas(): JSX.Element {
               <FlyingDocument
                 key={transfer.id}
                 transfer={transfer}
-                now={now}
+                now={nowRef.current}
                 stackDepth={stackDepth}
                 onComplete={removeDocumentTransfer}
               />

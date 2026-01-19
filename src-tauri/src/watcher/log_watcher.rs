@@ -126,6 +126,10 @@ async fn process_event(
     app: &AppHandle,
     tracker: &Arc<Mutex<FileTracker>>,
 ) {
+    // Collect all logs and agents for batch emit
+    let mut all_logs: Vec<LogEntry> = Vec::new();
+    let mut all_agents: Vec<Agent> = Vec::new();
+
     for path in &event.paths {
         // Only process .txt and .jsonl files
         let ext = path.extension().and_then(|e| e.to_str());
@@ -148,10 +152,10 @@ async fn process_event(
             };
 
             if let Some(entry) = entry {
-                // Emit log entry
-                let _ = app.emit("app-event", AppEvent::LogEntry(entry.clone()));
+                // Collect log entry
+                all_logs.push(entry.clone());
 
-                // Emit agent update
+                // Collect agent update
                 let agent_type = determine_agent_type(&entry);
                 let status = determine_agent_status(&entry);
 
@@ -163,22 +167,33 @@ async fn process_event(
                     desk_position: get_desk_position(agent_type),
                 };
 
-                let _ = app.emit("app-event", AppEvent::AgentUpdate(agent));
+                all_agents.push(agent);
             }
         }
+    }
+
+    // Emit single batch update instead of individual events
+    if !all_logs.is_empty() {
+        let _ = app.emit(
+            "app-event",
+            AppEvent::BatchUpdate {
+                logs: all_logs,
+                agents: all_agents,
+            },
+        );
     }
 }
 
 fn summarize_current_task(entry: &LogEntry) -> String {
     match entry.entry_type {
-        LogEntryType::ToolCall => match entry.tool_name.as_deref() {
-            Some(name) => format!("Tool call: {name}"),
-            None => "Tool call".to_string(),
-        },
-        LogEntryType::ToolResult => match entry.tool_name.as_deref() {
-            Some(name) => format!("Tool result: {name}"),
-            None => "Tool result".to_string(),
-        },
+        LogEntryType::ToolCall => entry
+            .tool_name
+            .as_deref()
+            .map_or("Tool call".to_string(), |name| format!("Tool call: {name}")),
+        LogEntryType::ToolResult => entry
+            .tool_name
+            .as_deref()
+            .map_or("Tool result".to_string(), |name| format!("Tool result: {name}")),
         LogEntryType::TodoUpdate => "Todo update".to_string(),
         LogEntryType::SessionStart => "Session start".to_string(),
         LogEntryType::SessionEnd => "Session end".to_string(),

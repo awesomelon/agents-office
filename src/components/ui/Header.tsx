@@ -2,7 +2,7 @@ import { useLogStore, useSettingsStore } from "../../store";
 
 export function Header() {
   const { watcherActive, sessionId } = useLogStore();
-  const { showInbox, toggleInbox } = useSettingsStore();
+  const { showInbox, toggleInbox, showTimeline, toggleTimeline } = useSettingsStore();
 
   return (
     <header className="flex items-center justify-between px-4 py-3 bg-office-wall/80 border-b-2 border-office-bg">
@@ -30,6 +30,17 @@ export function Header() {
             Session: {sessionId.slice(0, 8)}
           </span>
         )}
+
+        <button
+          onClick={toggleTimeline}
+          className={`px-3 py-1.5 text-xs font-pixel rounded border transition-colors ${
+            showTimeline
+              ? "bg-blue-600/80 border-blue-500 text-white"
+              : "bg-transparent border-gray-600 text-gray-400 hover:text-white hover:border-gray-400"
+          }`}
+        >
+          {showTimeline ? "Hide Timeline" : "Show Timeline"}
+        </button>
 
         <button
           onClick={toggleInbox}

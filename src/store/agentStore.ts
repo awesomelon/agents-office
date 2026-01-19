@@ -21,10 +21,13 @@ interface AgentState {
   lastTaskUpdateById: Record<string, number>; // timestamp when task was last updated
   initializeAgents: () => void;
   updateAgent: (agent: Agent) => void;
+  updateAgentsBatch: (agentList: Agent[]) => void;
   setAgentStatus: (id: string, status: AgentStatus) => void;
   setAgentTask: (id: string, task: string | null) => void;
   setAgentVacation: (id: string, on: boolean) => void;
+  setAgentVacationsBatch: (vacations: Record<string, boolean>) => void;
   setAgentError: (id: string, hasError: boolean) => void;
+  setAgentErrorsBatch: (errors: Record<string, boolean>) => void;
   startDocumentTransfer: (fromAgentId: string, toAgentId: string, toolName?: string | null) => void;
   removeDocumentTransfer: (id: string) => void;
   clearDocumentTransfers: () => void;
@@ -70,6 +73,34 @@ export const useAgentStore = create<AgentState>((set) => ({
     });
   },
 
+  updateAgentsBatch: (agentList) => {
+    if (agentList.length === 0) return;
+    set((state) => {
+      const now = Date.now();
+      const newAgents = { ...state.agents };
+      const newLastTaskUpdate = { ...state.lastTaskUpdateById };
+
+      for (const agent of agentList) {
+        // If we haven't seen this agent before and it's idle, skip it
+        if (!newAgents[agent.id] && agent.status === "idle") {
+          continue;
+        }
+
+        const taskChanged = newAgents[agent.id]?.current_task !== agent.current_task;
+        newAgents[agent.id] = agent;
+
+        if (taskChanged && agent.current_task) {
+          newLastTaskUpdate[agent.id] = now;
+        }
+      }
+
+      return {
+        agents: newAgents,
+        lastTaskUpdateById: newLastTaskUpdate,
+      };
+    });
+  },
+
   setAgentStatus: (id, status) => {
     set((state) => {
       const agent = state.agents[id];
@@ -109,6 +140,12 @@ export const useAgentStore = create<AgentState>((set) => ({
     }));
   },
 
+  setAgentVacationsBatch: (vacations) => {
+    const entries = Object.entries(vacations);
+    if (entries.length === 0) return;
+    set((state) => ({ vacationById: { ...state.vacationById, ...vacations } }));
+  },
+
   setAgentError: (id, hasError) => {
     set((state) => ({
       errorById: {
@@ -116,6 +153,12 @@ export const useAgentStore = create<AgentState>((set) => ({
         [id]: hasError,
       },
     }));
+  },
+
+  setAgentErrorsBatch: (errors) => {
+    const entries = Object.entries(errors);
+    if (entries.length === 0) return;
+    set((state) => ({ errorById: { ...state.errorById, ...errors } }));
   },
 
   startDocumentTransfer: (fromAgentId, toAgentId, toolName) => {

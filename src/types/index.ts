@@ -32,7 +32,8 @@ export type AppEvent =
   | { type: "AgentUpdate"; payload: Agent }
   | { type: "SessionStart"; payload: { session_id: string } }
   | { type: "SessionEnd"; payload: { session_id: string } }
-  | { type: "WatcherStatus"; payload: { active: boolean; path: string } };
+  | { type: "WatcherStatus"; payload: { active: boolean; path: string } }
+  | { type: "BatchUpdate"; payload: { logs: LogEntry[]; agents: Agent[] } };
 
 export interface DeskConfig {
   id: string;
