@@ -7,17 +7,19 @@ interface MessageContext {
 }
 
 const TOOL_ACTIONS: Record<string, string> = {
-  Read: "Reading file",
-  Write: "Writing file",
-  Edit: "Editing code",
-  Glob: "Searching files",
-  Grep: "Searching code",
-  WebFetch: "Fetching web page",
-  WebSearch: "Searching the web",
-  Bash: "Running command",
-  Task: "Delegating task",
-  AskUserQuestion: "Asking user",
-  TodoWrite: "Updating todos",
+  Read: "파일 읽는 중",
+  Write: "파일 쓰는 중",
+  Edit: "코드 수정 중",
+  EditNotebook: "노트북 수정 중",
+  NotebookEdit: "노트북 수정 중",
+  Glob: "파일 찾는 중",
+  Grep: "코드 검색 중",
+  WebFetch: "웹 페이지 가져오는 중",
+  WebSearch: "웹 검색 중",
+  Bash: "명령 실행 중",
+  Task: "작업 위임 중",
+  AskUserQuestion: "사용자에게 질문 중",
+  TodoWrite: "할 일 업데이트 중",
 };
 
 export function formatAgentMessage(context: MessageContext): string {
@@ -28,29 +30,104 @@ export function formatAgentMessage(context: MessageContext): string {
   }
 
   if (status === "error") {
-    return "Something went wrong!";
+    return "문제가 발생했어요";
   }
 
-  const toolMatch = rawTask.match(/^(\w+)(?:\s|:|\(|$)/);
-  if (toolMatch) {
-    const toolName = toolMatch[1];
+  const normalized = normalizeRawTask(rawTask);
+
+  const diagnosticSummary = summarizeDiagnostic(normalized);
+  if (diagnosticSummary) return diagnosticSummary;
+
+  const { toolName, remainder } = extractToolCall(normalized);
+  if (toolName) {
     const action = TOOL_ACTIONS[toolName];
     if (action) {
-      const target = extractTarget(rawTask);
+      if (toolName === "Bash") {
+        const command = extractBashCommand(remainder) ?? extractBashCommand(normalized);
+        return command ? `${action}: ${command}` : action;
+      }
+
+      const target = extractTarget(remainder) ?? extractTarget(normalized);
       return target ? `${action}: ${target}` : action;
     }
   }
 
   if (status === "passing") {
-    const targetAgent = extractTargetAgent(rawTask);
-    return targetAgent ? `Passing to ${targetAgent}...` : "Passing work...";
+    const targetAgent = extractTargetAgent(normalized);
+    return targetAgent ? `작업 전달 중: ${targetAgent}` : "작업 전달 중";
   }
 
   if (status === "thinking") {
-    return simplifyMessage(rawTask, 25);
+    return simplifyMessage(normalized, 28);
   }
 
-  return simplifyMessage(rawTask, 30);
+  return simplifyMessage(normalized, 34);
+}
+
+function normalizeRawTask(rawTask: string): string {
+  let t = rawTask.trim();
+
+  // Examples: "322Z Matched ...", "266Z High write ratio..."
+  t = t.replace(/^\d+Z\s+/, "");
+
+  // ISO-ish timestamp prefix: "2026-01-19 11:31:00 ..." or "2026-01-19T11:31:00 ..."
+  t = t.replace(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\s+/, "");
+
+  // Common log levels / prefixes
+  t = t.replace(
+    /^(?:\[(?:INFO|DEBUG|WARN|ERROR|TRACE)\]\s+|(?:INFO|DEBUG|WARN|ERROR|TRACE)\s+)+/i,
+    ""
+  );
+
+  return t.trim();
+}
+
+function summarizeDiagnostic(message: string): string | null {
+  const matchedHooks = message.match(/Matched\s+(\d+)\s+unique\s+hook/i);
+  if (matchedHooks) {
+    return `파일 감시 훅 매칭: ${matchedHooks[1]}개`;
+  }
+
+  if (/High\s+write\s+ratio/i.test(message)) {
+    return "파일 변경이 매우 잦음(이벤트 폭주 가능)";
+  }
+
+  if (/Watch error/i.test(message)) {
+    return "파일 감시 오류가 발생했어요";
+  }
+
+  if (/Channel error/i.test(message)) {
+    return "파일 감시 채널 오류가 발생했어요";
+  }
+
+  return null;
+}
+
+function extractToolCall(message: string): { toolName: string | null; remainder: string } {
+  const toolCallMatch = message.match(/^Tool call:\s*(\w+)(?:\s+|$)/i);
+  if (toolCallMatch) {
+    const name = toolCallMatch[1];
+    const remainder = message.slice(toolCallMatch[0].length).trim();
+    return { toolName: name, remainder };
+  }
+
+  const toolMatch = message.match(/^(\w+)(?:\s|:|\(|$)/);
+  if (toolMatch) {
+    const toolName = toolMatch[1];
+    const remainder = message.slice(toolMatch[0].length).replace(/^[:(]\s*/, "").trim();
+    return { toolName, remainder };
+  }
+
+  return { toolName: null, remainder: "" };
+}
+
+function extractBashCommand(message: string): string | null {
+  const t = message.trim();
+  if (!t) return null;
+
+  // Avoid leaking huge JSON payloads; keep a compact, readable command snippet.
+  const condensed = condenseBracketedPayloads(t);
+  return truncate(condensed.replace(/\s+/g, " "), 26);
 }
 
 function extractTarget(rawTask: string): string | null {
@@ -70,16 +147,28 @@ function extractTarget(rawTask: string): string | null {
 
 function extractTargetAgent(rawTask: string): string | null {
   const agentMatch = rawTask.match(/to\s+(researcher|coder|reviewer|artist)/i);
-  return agentMatch ? capitalize(agentMatch[1]) : null;
+  if (!agentMatch) return null;
+
+  const label: Record<string, string> = {
+    researcher: "리서처",
+    coder: "코더",
+    reviewer: "리뷰어",
+    artist: "아티스트",
+  };
+
+  const key = agentMatch[1].toLowerCase();
+  return label[key] ?? capitalize(key);
 }
 
 function simplifyMessage(message: string, maxLength: number): string {
-  let simplified = message
+  let simplified = normalizeRawTask(message)
     .replace(/^(Calling|Invoking|Running|Executing)\s+/i, "")
     .replace(/^(tool|function|command)\s*:\s*/i, "")
-    .replace(/\{.*\}/g, "")
-    .replace(/\[.*\]/g, "")
     .trim();
+
+  simplified = condenseBracketedPayloads(simplified);
+  simplified = simplified.replace(/\s+/g, " ").trim();
+  simplified = simplified.replace(/\s*\.\.\.\s*$/, "").trim();
 
   if (simplified.startsWith("/")) {
     const parts = simplified.split("/");
@@ -87,6 +176,16 @@ function simplifyMessage(message: string, maxLength: number): string {
   }
 
   return truncate(simplified, maxLength);
+}
+
+function condenseBracketedPayloads(text: string): string {
+  // Replace only *large* bracketed segments to avoid wiping meaningful short content.
+  const MAX_BRACKET_SEGMENT = 60;
+
+  let t = text;
+  t = t.replace(/\{[^{}]*\}/g, (m) => (m.length > MAX_BRACKET_SEGMENT ? "{…}" : m));
+  t = t.replace(/\[[^\[\]]*\]/g, (m) => (m.length > MAX_BRACKET_SEGMENT ? "[…]" : m));
+  return t;
 }
 
 function truncate(text: string, maxLength: number): string {

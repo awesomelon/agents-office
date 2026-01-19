@@ -22,8 +22,8 @@ const WALL_HEIGHT = 65;
 const ANIMATION_INTERVAL_MS = 250;
 
 // Text limits
-const SPEECH_BUBBLE_MAX_CHARS = 35;
-const SPEECH_BUBBLE_TRUNCATE_AT = 32;
+const SPEECH_BUBBLE_MAX_CHARS = 45;
+const SPEECH_BUBBLE_TRUNCATE_AT = 42;
 
 // Hair colors by agent type
 const HAIR_COLORS: Record<AgentType, number> = {
