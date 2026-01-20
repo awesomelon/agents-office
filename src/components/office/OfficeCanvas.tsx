@@ -2,7 +2,7 @@ import { Stage, Container, Graphics, Text } from "@pixi/react";
 import { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import { TextStyle } from "pixi.js";
 import { useShallow } from "zustand/shallow";
-import { useAgentStore, useHudStore, startHudPruning, stopHudPruning, type DocumentTransfer } from "../../store";
+import { useAgentStore, useHudStore, startHudPruning, stopHudPruning, type DocumentTransfer, type VisualEffect } from "../../store";
 import { DESK_CONFIGS, AGENT_COLORS, STATUS_COLORS } from "../../types";
 import type { Agent, AgentType, AgentStatus } from "../../types";
 import { formatAgentMessage } from "../../utils";
@@ -95,6 +95,36 @@ const WALK_X_MIN = 30;
 const WALK_X_MAX = 520; // 캔버스 550 기준
 
 type MotionPhase = "absent" | "entering" | "present" | "walking" | "returning";
+
+// Agent mood for expression rendering
+type AgentMood = "neutral" | "focused" | "stressed" | "blocked";
+
+// Mood timing thresholds (ms)
+const MOOD_FOCUSED_THRESHOLD_MS = 2000;
+const MOOD_STRESSED_THRESHOLD_MS = 5000;
+
+function computeAgentMood(
+  agentId: string,
+  errorById: Record<string, boolean>,
+  vacationById: Record<string, boolean>,
+  lastToolCallAtById: Record<string, number>,
+  lastErrorAtById: Record<string, number>,
+  now: number
+): AgentMood {
+  // Priority 1: Blocked (rate limit)
+  if (vacationById[agentId]) return "blocked";
+
+  // Priority 2: Stressed (recent error)
+  if (errorById[agentId]) return "stressed";
+  const lastError = lastErrorAtById[agentId];
+  if (lastError && now - lastError < MOOD_STRESSED_THRESHOLD_MS) return "stressed";
+
+  // Priority 3: Focused (recent tool_call)
+  const lastToolCall = lastToolCallAtById[agentId];
+  if (lastToolCall && now - lastToolCall < MOOD_FOCUSED_THRESHOLD_MS) return "focused";
+
+  return "neutral";
+}
 
 interface AgentMotion {
   phase: MotionPhase;
@@ -895,6 +925,7 @@ interface AgentSpriteProps {
   y: number;
   alpha: number;
   motion?: AgentMotion;
+  mood: AgentMood;
 }
 
 const VACATION_SIGN_TEXT_STYLE = new TextStyle({
@@ -1100,7 +1131,7 @@ function HudDisplay({ toolCallCount, avgToolResponseMs, errorCount, agentSwitchC
   );
 }
 
-function AgentSprite({ agent, x, y, alpha, motion }: AgentSpriteProps): JSX.Element {
+function AgentSprite({ agent, x, y, alpha, motion, mood }: AgentSpriteProps): JSX.Element {
   const [frame, setFrame] = useState(0);
   const [walkFrame, setWalkFrame] = useState(0);
   const color = AGENT_COLORS[agent.agent_type];
@@ -1152,9 +1183,9 @@ function AgentSprite({ agent, x, y, alpha, motion }: AgentSpriteProps): JSX.Elem
     drawAgentLegs(g, bounce, isWorking || isWalking, effectiveFrame, isWalking);
     drawAgentBody(g, bounce, color, isWorking || isWalking, effectiveFrame, isWalking);
     drawAgentHead(g, bounce, hairColor);
-    drawAgentFace(g, bounce, agent.status, effectiveFrame, walkDirection, isWalking);
+    drawAgentFace(g, bounce, agent.status, effectiveFrame, walkDirection, isWalking, mood);
     drawStatusIndicator(g, bounce, statusColor, agent.status === "error");
-  }, [color, statusColor, hairColor, frame, walkFrame, agent.status, isWalking, walkDirection]);
+  }, [color, statusColor, hairColor, frame, walkFrame, agent.status, isWalking, walkDirection, mood]);
 
   const showBubble = agent.status !== "idle" && message;
 
@@ -1241,30 +1272,84 @@ function drawAgentHead(g: any, bounce: number, hairColor: number): void {
   g.endFill();
 }
 
-function drawAgentFace(g: any, bounce: number, status: string, frame: number, direction: number = 1, isWalking: boolean = false): void {
+function drawAgentFace(g: any, bounce: number, status: string, frame: number, direction: number = 1, isWalking: boolean = false, mood: AgentMood = "neutral"): void {
+  // Eyebrows based on mood
+  if (mood === "stressed") {
+    // Worried eyebrows (angled up in center)
+    g.beginFill(0x4a3728, 0.8);
+    g.drawRect(-8, -21 - bounce, 5, 1);
+    g.drawRect(-7, -22 - bounce, 3, 1);
+    g.drawRect(3, -21 - bounce, 5, 1);
+    g.drawRect(4, -22 - bounce, 3, 1);
+    g.endFill();
+  } else if (mood === "focused") {
+    // Focused eyebrows (angled down in center)
+    g.beginFill(0x4a3728, 0.7);
+    g.drawRect(-8, -22 - bounce, 5, 1);
+    g.drawRect(-6, -21 - bounce, 3, 1);
+    g.drawRect(3, -22 - bounce, 5, 1);
+    g.drawRect(3, -21 - bounce, 3, 1);
+    g.endFill();
+  }
+
   // Eyes
   g.beginFill(0xffffff);
-  g.drawRect(-7, -18 - bounce, 5, 5);
-  g.drawRect(2, -18 - bounce, 5, 5);
+  if (mood === "blocked") {
+    // Sleepy/closed eyes (horizontal lines)
+    g.drawRect(-7, -16 - bounce, 5, 2);
+    g.drawRect(2, -16 - bounce, 5, 2);
+  } else {
+    g.drawRect(-7, -18 - bounce, 5, 5);
+    g.drawRect(2, -18 - bounce, 5, 5);
+  }
   g.endFill();
 
-  // Pupils - look in walking direction when walking
-  const { lookX, lookY } = isWalking
-    ? { lookX: direction * 1.5, lookY: 0 }
-    : getPupilOffset(status, frame);
-  g.beginFill(0x2a2a3a);
-  g.drawRect(-6 + lookX, -17 - bounce + lookY, 3, 3);
-  g.drawRect(3 + lookX, -17 - bounce + lookY, 3, 3);
-  g.endFill();
+  // Pupils - look in walking direction when walking, or based on mood
+  if (mood !== "blocked") {
+    const { lookX, lookY } = isWalking
+      ? { lookX: direction * 1.5, lookY: 0 }
+      : getPupilOffset(status, frame, mood);
+    g.beginFill(0x2a2a3a);
+    g.drawRect(-6 + lookX, -17 - bounce + lookY, 3, 3);
+    g.drawRect(3 + lookX, -17 - bounce + lookY, 3, 3);
+    g.endFill();
+  }
 
   // Mouth
-  const mouthStyle = getMouthStyle(status);
+  const mouthStyle = getMouthStyle(status, mood);
   g.beginFill(mouthStyle.color);
   g.drawRect(-3 + mouthStyle.xOffset, -9 - bounce, mouthStyle.width, mouthStyle.height);
   g.endFill();
+
+  // Sweat drop for stressed mood
+  if (mood === "stressed" && frame % 2 === 0) {
+    g.beginFill(0x60a5fa, 0.7);
+    g.drawRect(10, -16 - bounce, 2, 3);
+    g.drawRect(10, -13 - bounce, 2, 2);
+    g.endFill();
+  }
+
+  // Z marks for blocked mood
+  if (mood === "blocked") {
+    g.beginFill(0x94a3b8, 0.6);
+    g.drawRect(12, -24 - bounce, 4, 1);
+    g.drawRect(14, -23 - bounce, 2, 1);
+    g.drawRect(12, -22 - bounce, 4, 1);
+    g.endFill();
+  }
 }
 
-function getPupilOffset(status: string, frame: number): { lookX: number; lookY: number } {
+function getPupilOffset(status: string, frame: number, mood: AgentMood = "neutral"): { lookX: number; lookY: number } {
+  // Mood-based pupil adjustments
+  if (mood === "focused") {
+    return { lookX: 0, lookY: 0 }; // Straight ahead, focused
+  }
+  if (mood === "stressed") {
+    // Slightly jittery/nervous
+    return { lookX: Math.sin(frame * 1.5) * 1, lookY: -0.5 };
+  }
+
+  // Status-based defaults
   if (status === "thinking") {
     return { lookX: Math.sin(frame * 0.8) * 2, lookY: -1 };
   }
@@ -1274,7 +1359,19 @@ function getPupilOffset(status: string, frame: number): { lookX: number; lookY: 
   return { lookX: 0, lookY: 0 };
 }
 
-function getMouthStyle(status: string): { color: number; width: number; height: number; xOffset: number } {
+function getMouthStyle(status: string, mood: AgentMood = "neutral"): { color: number; width: number; height: number; xOffset: number } {
+  // Mood-based mouth styles
+  if (mood === "stressed") {
+    return { color: 0x8b4513, width: 5, height: 1, xOffset: 0 }; // Tense line
+  }
+  if (mood === "blocked") {
+    return { color: 0xb8956a, width: 3, height: 1, xOffset: 1 }; // Neutral small
+  }
+  if (mood === "focused") {
+    return { color: 0xd4956a, width: 3, height: 2, xOffset: 1 }; // Slight smile
+  }
+
+  // Status-based defaults
   if (status === "error") {
     return { color: 0x8b4513, width: 6, height: 2, xOffset: 0 };
   }
@@ -1322,21 +1419,146 @@ function getAgentPosition(agentId: string): { x: number; y: number } {
 
 const DOCUMENT_ARC_HEIGHT = 60;
 
+type ToolKind = "read" | "search" | "write" | "edit" | "run" | "plan" | "other";
+
 interface ToolStamp {
   label: string;
   color: number;
+  kind: ToolKind;
 }
 
 function getToolStamp(toolName: string | null | undefined): ToolStamp {
   const tool = toolName?.trim()?.toLowerCase();
-  if (!tool) return { label: "???", color: 0x6b7280 };
-  if (tool === "read") return { label: "READ", color: 0x3b82f6 };
-  if (tool === "glob" || tool === "grep" || tool === "websearch" || tool === "webfetch") return { label: "SRCH", color: 0x38bdf8 };
-  if (tool === "write") return { label: "WRIT", color: 0x22c55e };
-  if (tool === "edit" || tool === "notebookedit" || tool === "editnotebook") return { label: "EDIT", color: 0x16a34a };
-  if (tool === "bash") return { label: "BASH", color: 0xf59e0b };
-  if (tool === "todowrite" || tool === "task") return { label: "PLAN", color: 0xec4899 };
-  return { label: tool.slice(0, 4).toUpperCase(), color: 0x6b7280 };
+  if (!tool) return { label: "???", color: 0x6b7280, kind: "other" };
+  if (tool === "read") return { label: "READ", color: 0x3b82f6, kind: "read" };
+  if (tool === "glob" || tool === "grep" || tool === "websearch" || tool === "webfetch") return { label: "SRCH", color: 0x38bdf8, kind: "search" };
+  if (tool === "write") return { label: "WRIT", color: 0x22c55e, kind: "write" };
+  if (tool === "edit" || tool === "notebookedit" || tool === "editnotebook") return { label: "EDIT", color: 0x16a34a, kind: "edit" };
+  if (tool === "bash") return { label: "BASH", color: 0xf59e0b, kind: "run" };
+  if (tool === "todowrite" || tool === "task") return { label: "PLAN", color: 0xec4899, kind: "plan" };
+  return { label: tool.slice(0, 4).toUpperCase(), color: 0x6b7280, kind: "other" };
+}
+
+// Pixel art icon rendering for each tool kind
+function drawToolIcon(g: any, kind: ToolKind, color: number, cx: number, cy: number): void {
+  const P = 2; // pixel size
+  g.beginFill(color, 0.95);
+
+  switch (kind) {
+    case "read":
+      // Open book icon (8x6 pixels)
+      // Left page
+      g.drawRect(cx - 4 * P, cy - 2 * P, 3 * P, 4 * P);
+      // Right page
+      g.drawRect(cx + 1 * P, cy - 2 * P, 3 * P, 4 * P);
+      // Spine
+      g.drawRect(cx - P, cy - 2 * P, 2 * P, 4 * P);
+      g.endFill();
+      // Page lines
+      g.beginFill(0xffffff, 0.6);
+      g.drawRect(cx - 3 * P, cy - P, 2 * P, P);
+      g.drawRect(cx - 3 * P, cy + P, P, P);
+      g.drawRect(cx + 2 * P, cy - P, 2 * P, P);
+      g.drawRect(cx + 2 * P, cy + P, P, P);
+      g.endFill();
+      break;
+
+    case "search":
+      // Magnifying glass icon (7x7 pixels)
+      // Glass circle (hollow)
+      g.drawRect(cx - 2 * P, cy - 3 * P, 4 * P, P);
+      g.drawRect(cx - 3 * P, cy - 2 * P, P, 3 * P);
+      g.drawRect(cx + 2 * P, cy - 2 * P, P, 3 * P);
+      g.drawRect(cx - 2 * P, cy + P, 4 * P, P);
+      // Handle
+      g.drawRect(cx + 2 * P, cy + P, P, P);
+      g.drawRect(cx + 3 * P, cy + 2 * P, P, 2 * P);
+      g.endFill();
+      // Glass shine
+      g.beginFill(0xffffff, 0.5);
+      g.drawRect(cx - 2 * P, cy - 2 * P, P, P);
+      g.endFill();
+      break;
+
+    case "write":
+      // Pencil icon (6x8 pixels)
+      // Pencil body (diagonal)
+      g.drawRect(cx - 2 * P, cy - 3 * P, 2 * P, P);
+      g.drawRect(cx - P, cy - 2 * P, 2 * P, P);
+      g.drawRect(cx, cy - P, 2 * P, P);
+      g.drawRect(cx + P, cy, 2 * P, P);
+      g.drawRect(cx + 2 * P, cy + P, P, P);
+      g.endFill();
+      // Tip
+      g.beginFill(0xfbbf24, 0.9);
+      g.drawRect(cx + 3 * P, cy + 2 * P, P, P);
+      g.endFill();
+      // Eraser
+      g.beginFill(0xfda4af, 0.9);
+      g.drawRect(cx - 3 * P, cy - 3 * P, P, P);
+      g.endFill();
+      break;
+
+    case "edit":
+      // Document with pencil icon (7x7 pixels)
+      // Document
+      g.drawRect(cx - 3 * P, cy - 3 * P, 4 * P, 6 * P);
+      g.endFill();
+      // Pencil overlay
+      g.beginFill(0xfbbf24, 0.9);
+      g.drawRect(cx + P, cy - P, P, P);
+      g.drawRect(cx + 2 * P, cy, P, P);
+      g.drawRect(cx + 3 * P, cy + P, P, P);
+      g.endFill();
+      // Doc lines
+      g.beginFill(0xffffff, 0.5);
+      g.drawRect(cx - 2 * P, cy - 2 * P, 2 * P, P);
+      g.drawRect(cx - 2 * P, cy, 2 * P, P);
+      g.endFill();
+      break;
+
+    case "run":
+      // Terminal/gear icon - lightning bolt (6x8 pixels)
+      g.drawRect(cx - P, cy - 3 * P, 3 * P, P);
+      g.drawRect(cx - 2 * P, cy - 2 * P, 3 * P, P);
+      g.drawRect(cx - P, cy - P, 3 * P, P);
+      g.drawRect(cx, cy, 2 * P, P);
+      g.drawRect(cx - P, cy + P, 3 * P, P);
+      g.drawRect(cx, cy + 2 * P, 2 * P, P);
+      g.endFill();
+      break;
+
+    case "plan":
+      // Checklist icon (6x7 pixels)
+      // Paper
+      g.drawRect(cx - 2 * P, cy - 3 * P, 5 * P, 6 * P);
+      g.endFill();
+      // Checkmarks
+      g.beginFill(0xffffff, 0.7);
+      g.drawRect(cx - P, cy - 2 * P, P, P);
+      g.drawRect(cx, cy - P, P, P);
+      g.drawRect(cx - P, cy + P, P, P);
+      g.drawRect(cx, cy + 2 * P, P, P);
+      g.endFill();
+      // Lines
+      g.beginFill(0x000000, 0.3);
+      g.drawRect(cx + P, cy - 2 * P, 2 * P, P);
+      g.drawRect(cx + P, cy + P, 2 * P, P);
+      g.endFill();
+      break;
+
+    case "other":
+    default:
+      // Question mark icon (5x7 pixels)
+      g.drawRect(cx - P, cy - 3 * P, 2 * P, P);
+      g.drawRect(cx - 2 * P, cy - 2 * P, P, P);
+      g.drawRect(cx + P, cy - 2 * P, P, P);
+      g.drawRect(cx + P, cy - P, P, P);
+      g.drawRect(cx, cy, P, P);
+      g.drawRect(cx, cy + 2 * P, P, P);
+      g.endFill();
+      break;
+  }
 }
 
 const STAMP_TEXT_STYLE = new TextStyle({
@@ -1392,24 +1614,8 @@ function FlyingDocument({ transfer, now, stackDepth, onComplete }: FlyingDocumen
     g.drawRect(-DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
     g.endFill();
 
-    // Stamp (top-left)
-    const stampW = 12;
-    const stampH = 7;
-    const stampX = -DOCUMENT_SIZE / 2 + 2;
-    const stampY = -DOCUMENT_SIZE * 0.7 + 2;
-    g.beginFill(stamp.color, 0.95);
-    g.drawRoundedRect(stampX, stampY, stampW, stampH, 2);
-    g.endFill();
-    g.lineStyle(1, 0x0f172a, 0.35);
-    g.drawRoundedRect(stampX, stampY, stampW, stampH, 2);
-    g.lineStyle(0);
-
-    // Document lines (text)
-    g.beginFill(0x4a4a6a, 0.6);
-    g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.2, DOCUMENT_SIZE - 4, 2);
-    g.drawRect(-DOCUMENT_SIZE / 2 + 2, 0, DOCUMENT_SIZE - 6, 2);
-    g.drawRect(-DOCUMENT_SIZE / 2 + 2, DOCUMENT_SIZE * 0.2, DOCUMENT_SIZE - 5, 2);
-    g.endFill();
+    // Tool icon in center (main visual)
+    drawToolIcon(g, stamp.kind, stamp.color, 0, -3);
 
     // Fold corner
     g.beginFill(0xe0e0e0);
@@ -1418,7 +1624,7 @@ function FlyingDocument({ transfer, now, stackDepth, onComplete }: FlyingDocumen
     g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7);
     g.closePath();
     g.endFill();
-  }, [stamp.color]);
+  }, [stamp.kind, stamp.color]);
 
   return (
     <Container x={x + stackOffsetX} y={y + stackOffsetY} rotation={rotation} scale={scale * stackScale} alpha={stackAlpha}>
@@ -1427,8 +1633,8 @@ function FlyingDocument({ transfer, now, stackDepth, onComplete }: FlyingDocumen
         text={stamp.label}
         style={STAMP_TEXT_STYLE}
         anchor={0.5}
-        x={-DOCUMENT_SIZE / 2 + 2 + 6}
-        y={-DOCUMENT_SIZE * 0.7 + 2 + 3.5}
+        x={0}
+        y={DOCUMENT_SIZE * 0.45}
       />
     </Container>
   );
@@ -1496,22 +1702,168 @@ function SpeechBubble({ text }: SpeechBubbleProps): JSX.Element {
   );
 }
 
+// ─── Visual Effects Layer ───────────────────────────────────────────────────
+
+interface EffectsLayerProps {
+  effects: VisualEffect[];
+  now: number;
+  agents: Record<string, Agent>;
+}
+
+function EffectsLayer({ effects, now, agents }: EffectsLayerProps): JSX.Element {
+  const draw = useCallback((g: import("pixi.js").Graphics) => {
+    g.clear();
+
+    for (const effect of effects) {
+      const progress = (now - effect.startedAt) / effect.durationMs;
+      if (progress < 0 || progress >= 1) continue;
+
+      const agentPos = getAgentPosition(effect.agentId);
+      if (!agentPos) continue;
+
+      const { x, y } = agentPos;
+
+      switch (effect.kind) {
+        case "searchPulse":
+          drawSearchPulse(g, x, y, progress, effect.color);
+          break;
+        case "typeParticles":
+          drawTypeParticles(g, x, y, progress, effect.color, effect.seed);
+          break;
+        case "runSpark":
+          drawRunSpark(g, x, y, progress, effect.color, effect.seed);
+          break;
+        case "errorBurst":
+          drawErrorBurst(g, x, y, progress, effect.color, effect.seed);
+          break;
+      }
+    }
+  }, [effects, now, agents]);
+
+  return <Graphics draw={draw} />;
+}
+
+// searchPulse: expanding concentric rings
+function drawSearchPulse(g: import("pixi.js").Graphics, x: number, y: number, progress: number, color: number): void {
+  const maxRadius = 28;
+  const rings = 2;
+  const baseAlpha = 0.6 * (1 - progress);
+
+  for (let i = 0; i < rings; i++) {
+    const offset = i * 0.15;
+    const ringProgress = clamp01(progress * 1.3 - offset);
+    if (ringProgress <= 0) continue;
+
+    const radius = ringProgress * maxRadius;
+    const alpha = baseAlpha * (1 - ringProgress * 0.7);
+
+    g.lineStyle(2, color, alpha);
+    g.drawCircle(x, y - 20, radius);
+    g.lineStyle(0);
+  }
+}
+
+// typeParticles: floating particles rising upward
+function drawTypeParticles(g: import("pixi.js").Graphics, x: number, y: number, progress: number, color: number, seed: number): void {
+  const particleCount = 6;
+  const spread = 20;
+  const riseHeight = 30;
+  const alpha = 0.7 * (1 - progress);
+
+  for (let i = 0; i < particleCount; i++) {
+    const hash = (seed * 31 + i * 17) >>> 0;
+    const offsetX = ((hash % 100) / 100 - 0.5) * spread * 2;
+    const offsetY = (((hash >> 8) % 100) / 100) * 0.3;
+
+    const px = x + offsetX;
+    const py = y - 20 - progress * riseHeight * (1 + offsetY);
+    const size = 2 + ((hash >> 16) % 2);
+
+    g.beginFill(color, alpha * (1 - progress * 0.5));
+    g.drawRect(px - size / 2, py - size / 2, size, size);
+    g.endFill();
+  }
+}
+
+// runSpark: spark flash effect
+function drawRunSpark(g: import("pixi.js").Graphics, x: number, y: number, progress: number, color: number, seed: number): void {
+  const sparkCount = 8;
+  const maxLength = 12;
+  const alpha = 0.9 * (1 - progress);
+
+  for (let i = 0; i < sparkCount; i++) {
+    const angle = (i / sparkCount) * Math.PI * 2 + (seed % 100) * 0.01;
+    const length = maxLength * (0.5 + 0.5 * Math.sin(progress * Math.PI));
+    const startDist = 4 + progress * 8;
+
+    const sx = x + Math.cos(angle) * startDist;
+    const sy = y - 20 + Math.sin(angle) * startDist;
+    const ex = x + Math.cos(angle) * (startDist + length);
+    const ey = y - 20 + Math.sin(angle) * (startDist + length);
+
+    g.lineStyle(2, color, alpha);
+    g.moveTo(sx, sy);
+    g.lineTo(ex, ey);
+    g.lineStyle(0);
+  }
+
+  // Center glow
+  const glowRadius = 6 * (1 - progress * 0.5);
+  g.beginFill(color, alpha * 0.5);
+  g.drawCircle(x, y - 20, glowRadius);
+  g.endFill();
+}
+
+// errorBurst: explosive burst pattern
+function drawErrorBurst(g: import("pixi.js").Graphics, x: number, y: number, progress: number, color: number, seed: number): void {
+  const burstCount = 10;
+  const maxDist = 24;
+  const alpha = 0.8 * (1 - progress);
+  const easeProgress = easeOutCubic(progress);
+
+  for (let i = 0; i < burstCount; i++) {
+    const hash = (seed * 23 + i * 37) >>> 0;
+    const angle = (i / burstCount) * Math.PI * 2 + ((hash % 50) / 50 - 0.5) * 0.5;
+    const dist = maxDist * easeProgress;
+    const size = 3 - progress * 1.5;
+
+    const px = x + Math.cos(angle) * dist;
+    const py = y - 20 + Math.sin(angle) * dist;
+
+    g.beginFill(color, alpha);
+    g.drawRect(px - size / 2, py - size / 2, size, size);
+    g.endFill();
+  }
+
+  // Inner flash
+  if (progress < 0.3) {
+    const flashAlpha = 0.6 * (1 - progress / 0.3);
+    g.beginFill(0xffffff, flashAlpha);
+    g.drawCircle(x, y - 20, 8 * (1 - progress / 0.3));
+    g.endFill();
+  }
+}
+
 // Timeout for speech bubble disappearance (ms)
 const SPEECH_BUBBLE_TIMEOUT_MS = 5000;
 const SPEECH_BUBBLE_CHECK_INTERVAL_MS = 1000;
 
 export function OfficeCanvas(): JSX.Element {
   // Consolidated Zustand selectors using useShallow to reduce re-renders
-  const { agents, vacationById, errorById, documentTransfers } = useAgentStore(
+  const { agents, vacationById, errorById, documentTransfers, lastToolCallAtById, lastErrorAtById, effects } = useAgentStore(
     useShallow((state) => ({
       agents: state.agents,
       vacationById: state.vacationById,
       errorById: state.errorById,
       documentTransfers: state.documentTransfers,
+      lastToolCallAtById: state.lastToolCallAtById,
+      lastErrorAtById: state.lastErrorAtById,
+      effects: state.effects,
     }))
   );
   const removeDocumentTransfer = useAgentStore((state) => state.removeDocumentTransfer);
   const clearExpiredTasks = useAgentStore((state) => state.clearExpiredTasks);
+  const removeExpiredEffects = useAgentStore((state) => state.removeExpiredEffects);
   const hudMetrics = useHudStore(useShallow((state) => state.getMetrics()));
   const [dimensions, setDimensions] = useState({ width: OFFICE_WIDTH, height: OFFICE_HEIGHT });
   const [motionById, setMotionById] = useState<Record<string, AgentMotion>>({});
@@ -1530,9 +1882,16 @@ export function OfficeCanvas(): JSX.Element {
   useEffect(() => {
     let raf = 0;
     let lastUpdateTime = performance.now();
+    let lastEffectPruneTime = performance.now();
 
     const tick = (t: number) => {
       nowRef.current = t;
+
+      // Prune expired effects periodically (~500ms)
+      if (t - lastEffectPruneTime > 500) {
+        lastEffectPruneTime = t;
+        removeExpiredEffects(t);
+      }
 
       // Check if any animations are active
       const hasActiveDocTransfers = documentTransfers.length > 0;
@@ -1540,7 +1899,8 @@ export function OfficeCanvas(): JSX.Element {
       const hasWalkingMotions = Object.values(motionById).some(
         (m) => m.phase === "walking" || m.phase === "returning"
       );
-      const needsUpdate = hasActiveDocTransfers || hasEnteringMotions || hasWalkingMotions;
+      const hasActiveEffects = effects.length > 0;
+      const needsUpdate = hasActiveDocTransfers || hasEnteringMotions || hasWalkingMotions || hasActiveEffects;
 
       // Only trigger re-render when animations are active (throttled to ~30fps)
       if (needsUpdate && t - lastUpdateTime > 33) {
@@ -1552,7 +1912,7 @@ export function OfficeCanvas(): JSX.Element {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [documentTransfers.length, motionById]);
+  }, [documentTransfers.length, motionById, effects.length, removeExpiredEffects]);
 
   // Clear speech bubbles after timeout
   useEffect(() => {
@@ -1737,6 +2097,7 @@ export function OfficeCanvas(): JSX.Element {
             const target = getAgentPosition(agent.id); // DESK_CONFIGS 사용
             const motion = motionById[agent.id];
             const state = motion ? computeMotionState(motion, nowRef.current) : { x: target.x, y: target.y, alpha: 1 };
+            const mood = computeAgentMood(agent.id, errorById, vacationById, lastToolCallAtById, lastErrorAtById, Date.now());
 
             return (
               <AgentSprite
@@ -1746,6 +2107,7 @@ export function OfficeCanvas(): JSX.Element {
                 y={state.y}
                 alpha={state.alpha}
                 motion={motion}
+                mood={mood}
               />
             );
           })}
@@ -1761,6 +2123,7 @@ export function OfficeCanvas(): JSX.Element {
               />
             );
           })}
+          <EffectsLayer effects={effects} now={nowRef.current} agents={agents} />
           {/* HUD overlay on top of wall */}
           {SHOW_HUD && (
             <HudDisplay

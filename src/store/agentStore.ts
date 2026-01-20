@@ -12,12 +12,33 @@ export interface DocumentTransfer {
 const MAX_DOCUMENT_TRANSFERS = 8;
 let documentTransferSeq = 0;
 
+// Visual effects
+export type EffectKind = "searchPulse" | "typeParticles" | "runSpark" | "errorBurst";
+
+export interface VisualEffect {
+  id: string;
+  agentId: string;
+  kind: EffectKind;
+  startedAt: number;
+  durationMs: number;
+  color: number;
+  seed: number; // For deterministic particle positions
+}
+
+const MAX_EFFECTS = 30;
+const EFFECT_DEBOUNCE_MS = 200;
+let effectSeq = 0;
+
+// Track last effect time per agent+kind for debouncing
+const lastEffectTimeByKey: Record<string, number> = {};
+
 export interface BatchUpdateData {
   agentList: Agent[];
   vacations: Record<string, boolean>;
   errors: Record<string, boolean>;
   newDocumentTransfers: Array<{ from: string; to: string; toolName?: string | null }>;
   lastActiveId: string | null;
+  moodEvents?: { toolCalls: string[]; errors: string[] };
 }
 
 interface AgentState {
@@ -27,6 +48,9 @@ interface AgentState {
   documentTransfers: DocumentTransfer[];
   lastActiveAgentId: string | null;
   lastTaskUpdateById: Record<string, number>; // timestamp when task was last updated
+  // Mood tracking
+  lastToolCallAtById: Record<string, number>;
+  lastErrorAtById: Record<string, number>;
   initializeAgents: () => void;
   updateAgent: (agent: Agent) => void;
   updateAgentsBatch: (agentList: Agent[]) => void;
@@ -43,6 +67,13 @@ interface AgentState {
   setLastActiveAgent: (id: string) => void;
   resetAllToIdle: () => void;
   clearExpiredTasks: (timeoutMs: number) => void;
+  // Mood tracking
+  recordToolCall: (id: string) => void;
+  recordError: (id: string) => void;
+  // Visual effects
+  effects: VisualEffect[];
+  enqueueEffect: (agentId: string, kind: EffectKind, color: number, durationMs?: number) => void;
+  removeExpiredEffects: (now: number) => void;
 }
 
 export const useAgentStore = create<AgentState>((set) => ({
@@ -52,11 +83,14 @@ export const useAgentStore = create<AgentState>((set) => ({
   documentTransfers: [],
   lastActiveAgentId: null,
   lastTaskUpdateById: {},
+  lastToolCallAtById: {},
+  lastErrorAtById: {},
+  effects: [],
 
   initializeAgents: () => {
     // Keep empty by default. Agents will appear only when the backend emits an update.
     // (We still keep the function for compatibility.)
-    set({ agents: {}, vacationById: {}, errorById: {}, documentTransfers: [], lastActiveAgentId: null, lastTaskUpdateById: {} });
+    set({ agents: {}, vacationById: {}, errorById: {}, documentTransfers: [], lastActiveAgentId: null, lastTaskUpdateById: {}, lastToolCallAtById: {}, lastErrorAtById: {} });
   },
 
   updateAgent: (agent) => {
@@ -110,7 +144,7 @@ export const useAgentStore = create<AgentState>((set) => ({
     });
   },
 
-  processBatchUpdate: ({ agentList, vacations, errors, newDocumentTransfers, lastActiveId }) => {
+  processBatchUpdate: ({ agentList, vacations, errors, newDocumentTransfers, lastActiveId, moodEvents }) => {
     set((state) => {
       const now = Date.now();
       const startedAt = performance.now();
@@ -140,6 +174,24 @@ export const useAgentStore = create<AgentState>((set) => ({
       const hasErrorUpdates = Object.keys(errors).length > 0;
       const hasNewTransfers = newTransfers.length > 0;
 
+      // Mood events processing
+      let newToolCallAt = state.lastToolCallAtById;
+      let newErrorAt = state.lastErrorAtById;
+      if (moodEvents) {
+        if (moodEvents.toolCalls.length > 0) {
+          newToolCallAt = { ...state.lastToolCallAtById };
+          for (const id of moodEvents.toolCalls) {
+            newToolCallAt[id] = now;
+          }
+        }
+        if (moodEvents.errors.length > 0) {
+          newErrorAt = { ...state.lastErrorAtById };
+          for (const id of moodEvents.errors) {
+            newErrorAt[id] = now;
+          }
+        }
+      }
+
       return {
         agents: newAgents,
         lastTaskUpdateById: newLastTaskUpdate,
@@ -149,6 +201,8 @@ export const useAgentStore = create<AgentState>((set) => ({
           ? [...state.documentTransfers, ...newTransfers].slice(-MAX_DOCUMENT_TRANSFERS)
           : state.documentTransfers,
         lastActiveAgentId: lastActiveId ?? state.lastActiveAgentId,
+        lastToolCallAtById: newToolCallAt,
+        lastErrorAtById: newErrorAt,
       };
     });
   },
@@ -269,6 +323,50 @@ export const useAgentStore = create<AgentState>((set) => ({
       return changed
         ? { agents: updatedAgents, lastTaskUpdateById: updatedLastTaskUpdate }
         : state;
+    });
+  },
+
+  recordToolCall: (id) => {
+    set((state) => ({
+      lastToolCallAtById: { ...state.lastToolCallAtById, [id]: Date.now() },
+    }));
+  },
+
+  recordError: (id) => {
+    set((state) => ({
+      lastErrorAtById: { ...state.lastErrorAtById, [id]: Date.now() },
+    }));
+  },
+
+  enqueueEffect: (agentId, kind, color, durationMs = 800) => {
+    const now = performance.now();
+    const key = `${agentId}-${kind}`;
+
+    // Debounce: skip if same agent+kind was triggered recently
+    if (lastEffectTimeByKey[key] && now - lastEffectTimeByKey[key] < EFFECT_DEBOUNCE_MS) {
+      return;
+    }
+    lastEffectTimeByKey[key] = now;
+
+    const effect: VisualEffect = {
+      id: `effect-${effectSeq++}`,
+      agentId,
+      kind,
+      startedAt: now,
+      durationMs,
+      color,
+      seed: Math.floor(Math.random() * 10000),
+    };
+
+    set((state) => ({
+      effects: [...state.effects, effect].slice(-MAX_EFFECTS),
+    }));
+  },
+
+  removeExpiredEffects: (now) => {
+    set((state) => {
+      const active = state.effects.filter((e) => now - e.startedAt < e.durationMs);
+      return active.length !== state.effects.length ? { effects: active } : state;
     });
   },
 }));
