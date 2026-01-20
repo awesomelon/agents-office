@@ -3,6 +3,12 @@ import { listen } from "@tauri-apps/api/event";
 import { useAgentStore, useLogStore, useHudStore, type BatchUpdateData, type EffectKind } from "../store";
 import type { Agent, AppEvent, LogEntry } from "../types";
 import { TOOL_COLORS } from "../types";
+import {
+  getEffectForTool,
+  inferAgentIdFromTool,
+  isLimitReachedMessage,
+  isToolActivity,
+} from "../config";
 
 /** Check if running in Tauri environment (false when running npm run dev in browser) */
 function isTauriEnv(): boolean {
@@ -89,57 +95,9 @@ export function useTauriEvents(): void {
   }, [updateAgent, processBatchUpdate, addLog, addLogsBatch, setSessionId, setWatcherStatus, setAgentVacation, setAgentError, startDocumentTransfer, setLastActiveAgent, recordToolCall, recordToolResult, recordError, recordAgentSwitch, recordEventsBatch, setRateLimitActive, agentRecordToolCall, agentRecordError, enqueueEffect]);
 }
 
-// Optimized: Single regex pattern for rate limit detection
-const LIMIT_REACHED_PATTERN = /limit\s*reached|hit\s+your\s+limit|rate[_\s]*limit|429/i;
-
-function isLimitReachedMessage(content: string): boolean {
-  // Fast path: quick substring check before regex
-  const lower = content.toLowerCase();
-  if (!lower.includes("limit") && !lower.includes("429")) {
-    return false;
-  }
-  return LIMIT_REACHED_PATTERN.test(content);
-}
-
-function isToolActivity(entryType: string): boolean {
-  return entryType === "tool_call" || entryType === "tool_result";
-}
-
-// Unified tool configuration: agent mapping and visual effects
-interface ToolConfig {
-  agentId: string;
-  effect: { kind: EffectKind; color: number };
-}
-
-const TOOL_CONFIG: Record<string, ToolConfig> = {
-  read: { agentId: "reader", effect: { kind: "typeParticles", color: TOOL_COLORS.read } },
-  glob: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
-  grep: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
-  websearch: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
-  webfetch: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
-  write: { agentId: "writer", effect: { kind: "typeParticles", color: TOOL_COLORS.write } },
-  edit: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
-  notebookedit: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
-  editnotebook: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
-  todowrite: { agentId: "planner", effect: { kind: "typeParticles", color: TOOL_COLORS.plan } },
-  task: { agentId: "planner", effect: { kind: "typeParticles", color: TOOL_COLORS.plan } },
-  askuserquestion: { agentId: "support", effect: { kind: "typeParticles", color: TOOL_COLORS.support } },
-  bash: { agentId: "runner", effect: { kind: "runSpark", color: TOOL_COLORS.run } },
-};
-
-const DEFAULT_EFFECT: { kind: EffectKind; color: number } = { kind: "typeParticles", color: TOOL_COLORS.other };
-const TESTER_KEYWORDS = ["git", "test", "npm", "pnpm", "yarn", "cargo"];
-
-function getToolConfig(toolName: string | null | undefined): ToolConfig | null {
-  const tool = toolName?.trim()?.toLowerCase();
-  if (!tool) return null;
-  return TOOL_CONFIG[tool] ?? null;
-}
-
-function getEffectForTool(toolName: string | null | undefined): { kind: EffectKind; color: number } {
-  const config = getToolConfig(toolName);
-  return config?.effect ?? DEFAULT_EFFECT;
-}
+// =============================================================================
+// Log Entry Handler
+// =============================================================================
 
 interface LogEntryHandlers {
   addLog: (entry: LogEntry) => void;
@@ -208,7 +166,6 @@ function handleLogEntry(entry: LogEntry, handlers: LogEntryHandlers): void {
     if (agentId) {
       setAgentError(agentId, true);
       agentRecordError(agentId);
-      // Enqueue error burst effect
       enqueueEffect(agentId, "errorBurst", TOOL_COLORS.error, 1000);
     }
   } else if (agentId && isActivity) {
@@ -233,20 +190,12 @@ function inferAgentId(entry: LogEntry): string | null {
   const explicit = entry.agent_id?.trim();
   if (explicit) return explicit;
 
-  const tool = entry.tool_name?.trim()?.toLowerCase();
-  if (!tool) return null;
-
-  // Bash: context-dependent (Runner vs Tester)
-  if (tool === "bash") {
-    const content = entry.content.toLowerCase();
-    const isTesterCommand = TESTER_KEYWORDS.some((keyword) => content.includes(keyword));
-    return isTesterCommand ? "tester" : "runner";
-  }
-
-  // Use unified config lookup
-  const config = getToolConfig(entry.tool_name);
-  return config?.agentId ?? "editor";
+  return inferAgentIdFromTool(entry.tool_name, entry.content);
 }
+
+// =============================================================================
+// Batch Update Handler
+// =============================================================================
 
 interface BatchUpdateHandlers {
   addLogsBatch: (entries: LogEntry[]) => void;
