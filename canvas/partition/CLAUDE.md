@@ -7,6 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #809 | 1:06 PM | 🔵 | Agent Motion State Machine Implementation | ~634 |
-| #804 | 1:05 PM | 🔵 | useNowRaf Hook Implementation Details | ~495 |
+| #808 | 1:06 PM | 🔵 | Horizontal Partition Component Implementation | ~413 |
 </claude-mem-context>

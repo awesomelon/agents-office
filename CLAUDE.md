@@ -65,16 +65,19 @@ cd src-tauri && cargo test
 - **models/mod.rs**: `Agent`, `LogEntry`, `AppEvent` 타입 정의
 
 ### Frontend (src/)
-- **components/office/OfficeCanvas.tsx**: PixiJS 기반 사무실 렌더링 (550x700 캔버스)
+- **components/office/OfficeCanvas.tsx**: PixiJS 기반 사무실 렌더링 (550×700 캔버스)
 - **components/office/canvas/**: OfficeCanvas 하위 모듈
   - `agent/AgentSprite.tsx`: 에이전트 캐릭터 렌더링 및 바운스 애니메이션
   - `desk/Desk.tsx`: 책상 + 모니터(상태별 화면), AlertLight, QueueIndicator 포함
-  - `document/FlyingDocument.tsx`: 에이전트 간 서류 전달 애니메이션 (포물선 궤적, 회전)
-  - `effects/EffectsLayer.tsx`: 시각 효과 레이어 (무드 기반)
+  - `document/FlyingDocument.tsx`: 에이전트 간 서류 전달 애니메이션 (포물선 궤적, 회전, 툴 스탬프)
+  - `effects/EffectsLayer.tsx`: 시각 효과 레이어 (4가지 효과 타입)
+  - `background/OfficeBackground.tsx`: 바닥 타일, 창문, 벽, 우측 장식 요소 렌더링
+  - `partition/HorizontalPartition.tsx`: 섹션 구분 파티션 (300px 너비)
   - `hud/HudDisplay.tsx`: 상단 HUD 바 (툴콜/에러/에이전트전환 카운트, 레이트리밋 표시)
-  - `hooks/useAgentMotion.ts`: 에이전트 모션 상태 관리 (entering/walking/returning)
+  - `hooks/useAgentMotion.ts`: 에이전트 모션 상태 관리 (5단계 phase)
+  - `hooks/useNowRaf.ts`: RAF 루프 드라이버 (애니메이션 시 ~30fps throttle)
   - `hooks/useOfficeViewport.ts`: 뷰포트 스케일링 계산
-  - `constants.ts`, `layout.ts`, `types.ts`: 상수, 레이아웃 유틸, 타입 정의
+  - `constants.ts`, `layout.ts`, `types.ts`, `math.ts`: 상수, 레이아웃 유틸, 타입, 수학 함수
 - **hooks/useTauriEvents.ts**: `listen("app-event")`로 Tauri 이벤트 구독, 에이전트 전환 감지, HUD 메트릭 기록
 - **store/agentStore.ts**: Zustand 상태 관리
   - `documentTransfer`: 서류 전달 애니메이션 상태 (fromAgentId, toAgentId, startedAt)
@@ -118,28 +121,37 @@ function isTauriEnv(): boolean {
 - AskUserQuestion/Error → Support (보라색 0xa78bfa)
 
 ### Office Layout
-3-3-2 세로 배치 (`DESK_CONFIGS` in types/index.ts, 550x700 캔버스, 좌측 정렬):
+3-3-2 세로 배치 (`DESK_CONFIGS` in types/index.ts, 550×700 캔버스):
 ```
-┌─────────────────────────────────────────────┐ Y=0
-│              (벽 영역 70px)                  │
-├═══════════════════════┤                     │ Y=70 (파티션 1)
-│ [Reader]  [Searcher]  [Writer]              │ Y=130 (facing up)
-│   (60)      (200)      (340)                │
-│                                             │
-│ [Editor]  [Runner]    [Tester]              │ Y=320 (facing down)
-│   (60)      (200)      (340)                │
-├═══════════════════════┤                     │ Y=420 (파티션 2)
-│ [Planner] [Support]                         │ Y=520 (facing up)
-│   (60)      (200)                           │
-└─────────────────────────────────────────────┘ Y=700
+┌─────────────────────────────────────────────┬────────┐ Y=0
+│              (벽 영역 70px)                  │        │
+│  ┌──────────────────────────────────────────┤[Hanger]│ Y=70
+│  │ ENTRANCE (156px)                         │        │ Y=80
+├═══════════════════════════┤                 │[Locker]│ Y=70 (파티션 1, 300px 너비)
+│ [Reader]  [Searcher]  [Writer]              │        │ Y=130 (facing up)
+│   (60)      (200)      (340)                │        │
+│                                             │  RIGHT │
+│ [Editor]  [Runner]    [Tester]              │  WALL  │ Y=320 (facing down)
+│   (60)      (200)      (340)                │ X=500~ │
+├═══════════════════════════┤                 │        │ Y=420 (파티션 2, 300px 너비)
+│ [Planner] [Support]                         │        │ Y=520 (facing up)
+│   (60)      (200)                           │        │
+├─────────────────────────────────────────────┴────────┤
+│              (하단 창문 밴드 78px)                     │
+└──────────────────────────────────────────────────────┘ Y=700
 ```
-Agent 위치는 `getAgentPosition()` 함수가 DESK_CONFIGS에서 계산 (책상 Y - 55px).
+- Agent 위치: `getAgentPosition()` 함수가 DESK_CONFIGS에서 계산 (책상 Y - 55px)
+- 우측 장식: 옷걸이(Y=80), 사물함 2×5 그리드(Y=180)
+- 파티션: 300px 너비 (우측 벽 영역 회피)
 
 ### Document Transfer Animation
 에이전트 간 업무 전환을 서류 전달로 시각화:
 1. `useTauriEvents.ts`의 `handleDocumentTransfer()`가 tool_call 이벤트에서 에이전트 변경 감지
-2. `agentStore.startDocumentTransfer(fromId, toId)` 호출
-3. `OfficeCanvas`의 `FlyingDocument` 컴포넌트가 600ms 동안 포물선 애니메이션 렌더링
+2. `agentStore.startDocumentTransfer(fromId, toId, toolName)` 호출 (toolName 포함)
+3. `FlyingDocument` 컴포넌트가 600ms 동안 포물선 애니메이션 렌더링:
+   - **툴 스탬프**: 서류 위에 툴 종류별 픽셀아트 아이콘 + 라벨 표시
+   - `TOOL_STAMPS` 매핑: read→READ, glob/grep→SRCH, write→WRIT, edit→EDIT, bash→BASH, todowrite/task→PLAN
+   - 스택 깊이에 따른 오프셋/스케일/투명도 조절 (동시 다발 전송 대응)
 4. 완료 시 `clearDocumentTransfer()` 자동 호출
 
 ### Monitor Screen States
@@ -150,22 +162,38 @@ Agent 위치는 `getAgentPosition()` 함수가 DESK_CONFIGS에서 계산 (책상
 - **passing**: 화살표 오른쪽 이동 애니메이션
 - **error**: 빨간 배경 깜빡임 + X 마크
 
-### Agent Motion
-- **입장 모션**: 에이전트가 활성화되면 화면 상단 입구에서 책상 위치로 700ms 동안 이동 (`entering` phase)
-- **걷기 모션**: 에이전트가 `idle` 상태로 전환되면 사무실을 걸어다님 (`walking` phase)
-  - 한 번이라도 등장한 에이전트만 걷기 가능 (처음 idle은 무시)
-  - 같은 Y band 내에서만 이동 (파티션 관통 방지)
-  - 2~4초 멈춤 후 다음 웨이포인트로 이동 반복
-  - 걷기 애니메이션: 더 빠른 프레임 간격(180ms), 더 큰 다리/팔 움직임
-  - 이동 방향에 따라 눈동자 시선 변경
-- **복귀 모션**: 걷는 중 `working` 상태로 전환되면 책상으로 복귀 (`returning` phase)
-  - 거리 기반 duration (300~800ms 범위)
-- **Walkable bands** (Y좌표 범위):
-  - 85~115: 파티션1 아래
-  - 175~280: Section A~B 사이
-  - 360~410: Section B~파티션2 사이
-  - 440~490: 파티션2 아래
-  - 565~670: Section C 아래~바닥
+### Agent Motion (5-Phase System)
+`useAgentMotion` 훅이 에이전트 상태 변화에 따라 5단계 phase를 관리:
+
+**Motion Phases** (`MotionPhase` 타입):
+1. **absent**: 등장 전 초기 상태
+2. **entering**: 입구에서 책상으로 이동 (700ms, easeOutCubic)
+3. **present**: 책상에 정착한 상태 (정적)
+4. **walking**: 사무실 내 걷기 (idle 전환 시)
+5. **returning**: 걷기 중 working 전환 시 책상으로 복귀
+
+**상태 전이**:
+- `absent` → `entering`: 첫 tool_call 발생 시
+- `entering` → `present`: 700ms 경과 후
+- `present` → `walking`: working → idle 전환 시
+- `walking` → `returning`: idle → working 전환 시
+- `returning` → `present`: 복귀 완료 시
+
+**걷기 모션 상세**:
+- 같은 Y band 내에서만 이동 (파티션 관통 방지)
+- 속도: 35px/sec (`WALKING_SPEED_PX_PER_SEC`)
+- 웨이포인트 도달 후 2~4초 랜덤 멈춤 후 다음 이동
+- 걷기 애니메이션: 180ms 프레임 간격, 확대된 팔다리 움직임
+- 이동 방향에 따라 눈동자 시선 변경
+
+**Walkable Areas**:
+- X 범위: 30~295 (`WALK_X_MIN` ~ `WALK_X_MAX`)
+- Y bands (파티션 관통 방지):
+  - 85~115: 파티션1 아래 ~ Section A 위
+  - 175~280: Section A ~ Section B 사이
+  - 360~410: Section B ~ 파티션2 사이
+  - 440~490: 파티션2 아래 ~ Section C 위
+  - 565~670: Section C 아래 ~ 바닥
 
 ### Speech Bubble Timeout
 `OfficeCanvas`에서 `clearExpiredTasks()`를 1초마다 호출하여 5초 이상 업데이트 없는 에이전트의 말풍선을 자동으로 숨김. 타임아웃 값은 `SPEECH_BUBBLE_TIMEOUT_MS` 상수로 조절.
@@ -199,3 +227,80 @@ Agent 위치는 `getAgentPosition()` 함수가 DESK_CONFIGS에서 계산 (책상
 - 마우스 호버 시 툴팁으로 상세 정보 표시 (에이전트, 상대 시간)
 - `TIMELINE_COLORS`로 이벤트 유형별 색상 정의
 - 토글 버튼으로 표시/숨김 전환 가능
+
+### Visual Effects System
+`EffectsLayer.tsx`가 에이전트 동작에 따른 시각 효과를 렌더링:
+
+**효과 타입** (`VisualEffect.kind`):
+- **searchPulse**: 동심원 펄스 (Searcher 에이전트) - 2개 링이 확장하며 페이드아웃
+- **typeParticles**: 상승 파티클 (Writer/Editor) - 6개 사각형이 위로 떠오름
+- **runSpark**: 스파크 버스트 (Runner) - 8방향 스파크 + 중앙 글로우
+- **errorBurst**: 폭발 패턴 (에러 발생 시) - 10개 파편 + 플래시
+
+**구현 상세**:
+- deterministic 파티클 생성: `seed` 값으로 일관된 랜덤 패턴
+- 500ms마다 만료 효과 자동 정리 (`removeExpiredEffects`)
+- `easeOutCubic` 적용으로 자연스러운 애니메이션
+
+### Agent Mood System
+`AgentMood` 타입이 에이전트 표정을 결정:
+
+**무드 타입**:
+- **neutral**: 기본 표정
+- **focused**: 집중 표정 (최근 2초 내 tool_call 발생 시)
+- **stressed**: 긴장 표정 (에러 발생 시)
+- **blocked**: 차단 표정 (레이트리밋/vacation 상태)
+
+**결정 로직** (우선순위 순):
+1. `vacationById[id]` → `blocked`
+2. `errorById[id]` → `stressed`
+3. 마지막 tool_call 2초 이내 → `focused`
+4. 기본 → `neutral`
+
+### useNowRaf Pattern
+RAF(requestAnimationFrame) 기반 애니메이션 루프:
+```typescript
+useNowRaf({
+  nowRef,           // 현재 시간 ref (리렌더 방지)
+  documentTransfers,
+  motionById,
+  effects,
+  removeExpiredEffects,
+});
+```
+- 애니메이션 활성 시에만 ~30fps로 throttle (33ms 간격)
+- refs로 자주 변경되는 상태 미러링 → 효과 1회 설치
+- 활성 상태 체크: 문서 전송, entering/walking/returning 모션, 시각 효과
+
+### Canvas Constants
+주요 레이아웃 상수 (`constants.ts`):
+```
+OFFICE_WIDTH = 550      // 캔버스 너비
+OFFICE_HEIGHT = 700     // 캔버스 높이
+RIGHT_WALL_START_X = 500  // 우측 벽 시작 위치
+ENTRANCE_WIDTH = 156    // 입구 너비
+COAT_HANGER_X = 420     // 옷걸이 X 위치
+LOCKER_X = 420          // 사물함 X 위치
+LOCKER_CELL_SIZE = 24   // 사물함 칸 크기 (2×5 그리드)
+PARTITION_WIDTH = 300   // 파티션 너비 (우측 벽 회피)
+```
+
+### Build Optimization
+Vite 빌드 설정 (`vite.config.ts`):
+```typescript
+build: {
+  chunkSizeWarningLimit: 700,  // KB (PixiJS 청크 경고 회피)
+  rollupOptions: {
+    output: {
+      manualChunks: {
+        pixi: ["pixi.js", "@pixi/react"],  // ~420KB
+        react: ["react", "react-dom"],     // ~140KB
+        tauri: ["@tauri-apps/api", ...],   // ~30KB
+        vendor: ["zustand"],               // ~10KB
+      }
+    }
+  }
+}
+```
+- 주요 의존성 별도 청크 분리로 캐싱 효율 극대화
+- PixiJS가 가장 큰 청크이므로 경고 임계값 700KB 설정

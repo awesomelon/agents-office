@@ -7,6 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #809 | 1:06 PM | 🔵 | Agent Motion State Machine Implementation | ~634 |
-| #804 | 1:05 PM | 🔵 | useNowRaf Hook Implementation Details | ~495 |
+| #805 | 1:05 PM | 🔵 | EffectsLayer Visual Effects System Implementation | ~558 |
 </claude-mem-context>
