@@ -16,9 +16,7 @@
         "title": "Agents Office",
         "width": 1200,
         "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
-        "resizable": true,
+        "resizable": false,
         "fullscreen": false,
         "decorations": true,
         "transparent": false

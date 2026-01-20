@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { OFFICE_HEIGHT, OFFICE_WIDTH } from "../constants";
 import type { ViewportRect } from "../types";
 
@@ -9,23 +9,42 @@ export function useOfficeViewport(): {
   offsetY: number;
   viewport: ViewportRect;
 } {
-  const [dimensions, setDimensions] = useState({ width: OFFICE_WIDTH, height: OFFICE_HEIGHT });
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const observerRef = useRef<ResizeObserver | null>(null);
+
+  // 초기 크기 동기 측정 (ResizeObserver보다 먼저 실행)
+  useLayoutEffect(() => {
+    const container = document.querySelector(".office-container");
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setDimensions({ width: rect.width, height: rect.height });
+      }
+    }
+  }, []);
 
   useEffect(() => {
-    function updateDimensions(): void {
-      const container = document.querySelector(".office-container");
-      if (container) {
-        const rect = container.getBoundingClientRect();
-        setDimensions({
-          width: Math.max(OFFICE_WIDTH, rect.width),
-          height: Math.max(OFFICE_HEIGHT, rect.height),
-        });
+    const container = document.querySelector(".office-container");
+    if (!container) return;
+
+    function updateDimensions(entry: ResizeObserverEntry): void {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) {
+        setDimensions({ width, height });
       }
     }
 
-    updateDimensions();
-    window.addEventListener("resize", updateDimensions);
-    return () => window.removeEventListener("resize", updateDimensions);
+    observerRef.current = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        updateDimensions(entry);
+      }
+    });
+
+    observerRef.current.observe(container);
+
+    return () => {
+      observerRef.current?.disconnect();
+    };
   }, []);
 
   const scale = Math.min(

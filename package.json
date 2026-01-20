@@ -1,6 +1,6 @@
 {
   "name": "@j-ho/agents-office",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Claude Code visualization as agents working in an office",
   "license": "MIT",
   "author": "j-ho",
@@ -36,7 +36,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "zip": "ditto -c -k --keepParent 'src-tauri/target/release/bundle/macos/Agents Office.app' 'Agents-Office-macos.zip'"
   },
   "dependencies": {
     "@pixi/react": "^7.1.2",

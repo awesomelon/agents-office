@@ -82,6 +82,11 @@ export function OfficeCanvas(): JSX.Element {
     });
   }, [agents, motionById, vacationById]);
 
+  // dimensions가 0일 때 빈 컨테이너만 렌더링하여 깜빡임 방지
+  if (dimensions.width === 0 || dimensions.height === 0) {
+    return <div className="office-container w-full h-full bg-inbox-bg" />;
+  }
+
   return (
     <div className="office-container w-full h-full bg-inbox-bg">
       <Stage

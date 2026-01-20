@@ -43,3 +43,11 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #6a6a8a;
 }
+
+/* Office canvas container centering */
+.office-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
