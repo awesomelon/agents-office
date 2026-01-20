@@ -60,13 +60,15 @@ cd src-tauri && cargo test
 
 ### Frontend (src/)
 - **components/office/OfficeCanvas.tsx**: PixiJS 기반 사무실 렌더링 (550x700 캔버스)
-  - `FlyingDocument`: 에이전트 간 서류 전달 애니메이션 (포물선 궤적, 회전)
-  - `MonitorScreen`: 에이전트 상태별 모니터 화면 동적 변화
-  - `AgentSprite`: 에이전트 캐릭터 렌더링 및 바운스 애니메이션
-  - `HorizontalPartition`: 섹션 구분용 연두색 가로 파티션 바
-  - `HudDisplay`: 상단 HUD 바 (툴콜/에러/에이전트전환 카운트, 레이트리밋 표시)
-  - `AlertLight`: 에러 발생 시 책상 위 빨간 경고등 깜빡임
-  - `QueueIndicator`: 레이트리밋 시 모래시계 + 대기열 점 애니메이션
+- **components/office/canvas/**: OfficeCanvas 하위 모듈
+  - `agent/AgentSprite.tsx`: 에이전트 캐릭터 렌더링 및 바운스 애니메이션
+  - `desk/Desk.tsx`: 책상 + 모니터(상태별 화면), AlertLight, QueueIndicator 포함
+  - `document/FlyingDocument.tsx`: 에이전트 간 서류 전달 애니메이션 (포물선 궤적, 회전)
+  - `effects/EffectsLayer.tsx`: 시각 효과 레이어 (무드 기반)
+  - `hud/HudDisplay.tsx`: 상단 HUD 바 (툴콜/에러/에이전트전환 카운트, 레이트리밋 표시)
+  - `hooks/useAgentMotion.ts`: 에이전트 모션 상태 관리 (entering/walking/returning)
+  - `hooks/useOfficeViewport.ts`: 뷰포트 스케일링 계산
+  - `constants.ts`, `layout.ts`, `types.ts`: 상수, 레이아웃 유틸, 타입 정의
 - **hooks/useTauriEvents.ts**: `listen("app-event")`로 Tauri 이벤트 구독, 에이전트 전환 감지, HUD 메트릭 기록
 - **store/agentStore.ts**: Zustand 상태 관리
   - `documentTransfer`: 서류 전달 애니메이션 상태 (fromAgentId, toAgentId, startedAt)
