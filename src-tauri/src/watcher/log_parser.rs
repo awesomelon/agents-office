@@ -1,15 +1,4 @@
 use crate::models::{AgentStatus, AgentType, LogEntry, LogEntryType};
-use regex::Regex;
-use std::sync::LazyLock;
-
-static TOOL_CALL_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"Tool call: (\w+)").unwrap());
-
-static ERROR_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[ERROR\]|\[error\]|Error:|error:").unwrap());
-
-static TODO_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"TodoWrite|todo|Task:").unwrap());
 
 /// Parse a line from a debug log file
 pub fn parse_debug_line(line: &str) -> Option<LogEntry> {
@@ -88,37 +77,46 @@ pub fn parse_session_line(line: &str) -> Option<LogEntry> {
 /// Determine which agent type should handle this log entry
 pub fn determine_agent_type(entry: &LogEntry) -> AgentType {
     if let Some(ref tool) = entry.tool_name {
-        match tool.to_lowercase().as_str() {
-            // Reader: file reading
-            "read" => AgentType::Reader,
-            // Searcher: search and web tools
-            "glob" | "grep" | "websearch" | "webfetch" => AgentType::Searcher,
-            // Writer: file creation
-            "write" => AgentType::Writer,
-            // Editor: code modification
-            "edit" | "notebookedit" => AgentType::Editor,
-            // Bash: context-dependent (Runner vs Tester)
-            "bash" => {
-                let content = entry.content.to_lowercase();
-                // Tester: git, test, npm, pnpm, yarn, cargo commands
-                if content.contains("git")
-                    || content.contains("test")
-                    || content.contains("npm")
-                    || content.contains("pnpm")
-                    || content.contains("yarn")
-                    || content.contains("cargo")
-                {
-                    AgentType::Tester
-                } else {
-                    AgentType::Runner
-                }
-            }
-            // Planner: task management
-            "todowrite" | "task" => AgentType::Planner,
-            // Support: user questions
-            "askuserquestion" => AgentType::Support,
-            _ => AgentType::Editor,
+        // Avoid allocating `to_lowercase()` for common tool names.
+        if tool.eq_ignore_ascii_case("read") {
+            return AgentType::Reader;
         }
+        if tool.eq_ignore_ascii_case("glob")
+            || tool.eq_ignore_ascii_case("grep")
+            || tool.eq_ignore_ascii_case("websearch")
+            || tool.eq_ignore_ascii_case("webfetch")
+        {
+            return AgentType::Searcher;
+        }
+        if tool.eq_ignore_ascii_case("write") {
+            return AgentType::Writer;
+        }
+        if tool.eq_ignore_ascii_case("edit") || tool.eq_ignore_ascii_case("notebookedit") {
+            return AgentType::Editor;
+        }
+        if tool.eq_ignore_ascii_case("bash") {
+            // Bash: context-dependent (Runner vs Tester)
+            // We keep a single lowercase allocation only for this branch.
+            let content = entry.content.to_ascii_lowercase();
+            // Tester: git, test, npm, pnpm, yarn, cargo commands
+            if content.contains("git")
+                || content.contains("test")
+                || content.contains("npm")
+                || content.contains("pnpm")
+                || content.contains("yarn")
+                || content.contains("cargo")
+            {
+                return AgentType::Tester;
+            }
+            return AgentType::Runner;
+        }
+        if tool.eq_ignore_ascii_case("todowrite") || tool.eq_ignore_ascii_case("task") {
+            return AgentType::Planner;
+        }
+        if tool.eq_ignore_ascii_case("askuserquestion") {
+            return AgentType::Support;
+        }
+        AgentType::Editor
     } else if entry.entry_type == LogEntryType::Error {
         AgentType::Support
     } else {
@@ -150,19 +148,31 @@ fn extract_timestamp(line: &str) -> (Option<String>, &str) {
 }
 
 fn determine_entry_type(content: &str) -> (LogEntryType, Option<String>) {
-    // Check for tool calls
-    if let Some(caps) = TOOL_CALL_REGEX.captures(content) {
-        let tool_name = caps.get(1).map(|m| m.as_str().to_string());
+    // Fast path: avoid regex for tool call/result lines.
+    if let Some(rest) = content.strip_prefix("Tool call: ") {
+        let tool_name = rest.split_whitespace().next().map(|s| s.to_string());
         return (LogEntryType::ToolCall, tool_name);
+    }
+    if let Some(rest) = content.strip_prefix("Tool result: ") {
+        let tool_name = rest.split_whitespace().next().map(|s| s.to_string());
+        return (LogEntryType::ToolResult, tool_name);
     }
 
     // Check for errors
-    if ERROR_REGEX.is_match(content) {
+    if content.contains("[ERROR]")
+        || content.contains("[error]")
+        || content.contains("Error:")
+        || content.contains("error:")
+    {
         return (LogEntryType::Error, None);
     }
 
     // Check for todo updates
-    if TODO_REGEX.is_match(content) {
+    if content.contains("TodoWrite")
+        || content.contains("Task:")
+        || content.contains("todo")
+        || content.contains("TODO")
+    {
         return (LogEntryType::TodoUpdate, Some("TodoWrite".to_string()));
     }
 

@@ -18,8 +18,8 @@ pub fn run() {
             let handle = app.handle().clone();
 
             // Start the log watcher in a background task
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = watcher::start_watching(handle).await {
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Err(e) = watcher::start_watching(handle) {
                     tracing::error!("Failed to start log watcher: {}", e);
                 }
             });
