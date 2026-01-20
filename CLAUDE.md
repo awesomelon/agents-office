@@ -53,9 +53,15 @@ cd src-tauri && cargo test
 - `BatchUpdate`: 여러 로그/에이전트 업데이트를 배치로 처리 (성능 최적화)
 
 ### Backend (src-tauri/src/)
-- **lib.rs**: Tauri 앱 진입점, 백그라운드 태스크로 로그 워처 시작
-- **watcher/log_watcher.rs**: notify-debouncer-full로 파일 감시, FileTracker로 파일별 읽은 위치 추적
-- **watcher/log_parser.rs**: 로그 라인 파싱, 도구 이름으로 에이전트 타입 결정
+- **lib.rs**: Tauri 앱 진입점, 로그 워처는 `spawn_blocking`으로 실행(블로킹 watcher 루프가 런타임을 점유하지 않게 격리)
+- **watcher/log_watcher.rs**: notify-debouncer-full로 파일 감시 + 배치 emit (`AppEvent::BatchUpdate`)
+  - `FileTracker`는 파일별 읽은 위치를 **실제 stream position 기준**으로 추적(EOF seek로 점프하지 않음 → append 중에도 누락 방지)
+  - 파일 truncate/rotate 감지 시 오프셋 리셋
+  - **개행 없는 마지막 줄**은 tail-buffer로 보관 후 다음 이벤트에서 이어붙임(증분 읽기에서 중복/유실 방지)
+  - `tracing::debug!`로 배치 처리 시간/라인 수/emit 크기 계측(병목 분석용)
+- **watcher/log_parser.rs**: 로그 라인 파싱
+  - `"Tool call: ..."` / `"Tool result: ..."`는 fast-path로 분기(Regex/불필요한 lowercase 할당 최소화)
+  - tool name 기반 에이전트 타입 결정
 - **models/mod.rs**: `Agent`, `LogEntry`, `AppEvent` 타입 정의
 
 ### Frontend (src/)
