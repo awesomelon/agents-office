@@ -1,5 +1,5 @@
 import { Container, Graphics, Text } from "@pixi/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { TextStyle } from "pixi.js";
 import { AGENT_COLORS } from "../../../../types";
 import type { AgentStatus, AgentType } from "../../../../types";
@@ -11,6 +11,7 @@ import {
   VACATION_SIGN_HEIGHT,
   VACATION_SIGN_WIDTH,
 } from "../constants";
+import { useFrameAnimation } from "../hooks/useFrameAnimation";
 
 interface DeskProps {
   x: number;
@@ -109,17 +110,7 @@ interface MonitorScreenProps {
 }
 
 function MonitorScreen({ status, agentType }: MonitorScreenProps): JSX.Element {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    if (status === "idle") return;
-
-    const interval = setInterval(() => {
-      setFrame((f) => (f + 1) % 8);
-    }, 150);
-
-    return () => clearInterval(interval);
-  }, [status]);
+  const frame = useFrameAnimation(8, 150, status !== "idle");
 
   const draw = useCallback((g: any) => {
     g.clear();
@@ -327,14 +318,7 @@ function VacationSign(): JSX.Element {
 
 // AlertLight component: flashing red siren on desk
 function AlertLight(): JSX.Element {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setFrame((f) => (f + 1) % 2);
-    }, ALERT_LIGHT_BLINK_MS);
-    return () => clearInterval(interval);
-  }, []);
+  const frame = useFrameAnimation(2, ALERT_LIGHT_BLINK_MS);
 
   const draw = useCallback((g: any) => {
     g.clear();
@@ -371,14 +355,7 @@ function AlertLight(): JSX.Element {
 
 // QueueIndicator component: loading dots animation for rate limit
 function QueueIndicator(): JSX.Element {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setFrame((f) => (f + 1) % 3);
-    }, QUEUE_DOT_BLINK_MS);
-    return () => clearInterval(interval);
-  }, []);
+  const frame = useFrameAnimation(3, QUEUE_DOT_BLINK_MS);
 
   const draw = useCallback((g: any) => {
     g.clear();

@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from "@pixi/react";
 import { useCallback, useEffect, useMemo } from "react";
 import { TextStyle } from "pixi.js";
 import type { DocumentTransfer } from "../../../../store";
+import { TOOL_COLORS } from "../../../../types";
 import { DOCUMENT_ARC_HEIGHT, DOCUMENT_SIZE, DOCUMENT_TRANSFER_DURATION_MS } from "../constants";
 import { clamp01, easeOutCubic, lerp } from "../math";
 import { getAgentPosition } from "../layout";
@@ -14,21 +15,21 @@ interface ToolStamp {
   kind: ToolKind;
 }
 
-const DEFAULT_STAMP: ToolStamp = { label: "???", color: 0x6b7280, kind: "other" };
+const DEFAULT_STAMP: ToolStamp = { label: "???", color: TOOL_COLORS.other, kind: "other" };
 
 const TOOL_STAMPS: Record<string, ToolStamp> = {
-  read: { label: "READ", color: 0x3b82f6, kind: "read" },
-  glob: { label: "SRCH", color: 0x38bdf8, kind: "search" },
-  grep: { label: "SRCH", color: 0x38bdf8, kind: "search" },
-  websearch: { label: "SRCH", color: 0x38bdf8, kind: "search" },
-  webfetch: { label: "SRCH", color: 0x38bdf8, kind: "search" },
-  write: { label: "WRIT", color: 0x22c55e, kind: "write" },
-  edit: { label: "EDIT", color: 0x16a34a, kind: "edit" },
-  notebookedit: { label: "EDIT", color: 0x16a34a, kind: "edit" },
-  editnotebook: { label: "EDIT", color: 0x16a34a, kind: "edit" },
-  bash: { label: "BASH", color: 0xf59e0b, kind: "run" },
-  todowrite: { label: "PLAN", color: 0xec4899, kind: "plan" },
-  task: { label: "PLAN", color: 0xec4899, kind: "plan" },
+  read: { label: "READ", color: TOOL_COLORS.read, kind: "read" },
+  glob: { label: "SRCH", color: TOOL_COLORS.search, kind: "search" },
+  grep: { label: "SRCH", color: TOOL_COLORS.search, kind: "search" },
+  websearch: { label: "SRCH", color: TOOL_COLORS.search, kind: "search" },
+  webfetch: { label: "SRCH", color: TOOL_COLORS.search, kind: "search" },
+  write: { label: "WRIT", color: TOOL_COLORS.write, kind: "write" },
+  edit: { label: "EDIT", color: TOOL_COLORS.edit, kind: "edit" },
+  notebookedit: { label: "EDIT", color: TOOL_COLORS.edit, kind: "edit" },
+  editnotebook: { label: "EDIT", color: TOOL_COLORS.edit, kind: "edit" },
+  bash: { label: "BASH", color: TOOL_COLORS.run, kind: "run" },
+  todowrite: { label: "PLAN", color: TOOL_COLORS.plan, kind: "plan" },
+  task: { label: "PLAN", color: TOOL_COLORS.plan, kind: "plan" },
 };
 
 function getToolStamp(toolName: string | null | undefined): ToolStamp {

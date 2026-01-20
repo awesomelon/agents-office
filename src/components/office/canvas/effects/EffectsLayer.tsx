@@ -1,4 +1,5 @@
 import { Graphics } from "@pixi/react";
+import type { Graphics as PixiGraphics } from "pixi.js";
 import { useCallback } from "react";
 import type { VisualEffect } from "../../../../store";
 import { easeOutCubic, clamp01 } from "../math";
@@ -10,7 +11,7 @@ interface EffectsLayerProps {
 }
 
 export function EffectsLayer({ effects, now }: EffectsLayerProps): JSX.Element {
-  const draw = useCallback((g: import("pixi.js").Graphics) => {
+  const draw = useCallback((g: PixiGraphics) => {
     g.clear();
 
     for (const effect of effects) {
@@ -40,7 +41,7 @@ export function EffectsLayer({ effects, now }: EffectsLayerProps): JSX.Element {
 }
 
 // searchPulse: expanding concentric rings
-function drawSearchPulse(g: import("pixi.js").Graphics, x: number, y: number, progress: number, color: number): void {
+function drawSearchPulse(g: PixiGraphics, x: number, y: number, progress: number, color: number): void {
   const maxRadius = 28;
   const rings = 2;
   const baseAlpha = 0.6 * (1 - progress);
@@ -60,7 +61,7 @@ function drawSearchPulse(g: import("pixi.js").Graphics, x: number, y: number, pr
 }
 
 // typeParticles: floating particles rising upward
-function drawTypeParticles(g: import("pixi.js").Graphics, x: number, y: number, progress: number, color: number, seed: number): void {
+function drawTypeParticles(g: PixiGraphics, x: number, y: number, progress: number, color: number, seed: number): void {
   const particleCount = 6;
   const spread = 20;
   const riseHeight = 30;
@@ -82,7 +83,7 @@ function drawTypeParticles(g: import("pixi.js").Graphics, x: number, y: number, 
 }
 
 // runSpark: spark flash effect
-function drawRunSpark(g: import("pixi.js").Graphics, x: number, y: number, progress: number, color: number, seed: number): void {
+function drawRunSpark(g: PixiGraphics, x: number, y: number, progress: number, color: number, seed: number): void {
   const sparkCount = 8;
   const maxLength = 12;
   const alpha = 0.9 * (1 - progress);
@@ -111,7 +112,7 @@ function drawRunSpark(g: import("pixi.js").Graphics, x: number, y: number, progr
 }
 
 // errorBurst: explosive burst pattern
-function drawErrorBurst(g: import("pixi.js").Graphics, x: number, y: number, progress: number, color: number, seed: number): void {
+function drawErrorBurst(g: PixiGraphics, x: number, y: number, progress: number, color: number, seed: number): void {
   const burstCount = 10;
   const maxDist = 24;
   const alpha = 0.8 * (1 - progress);

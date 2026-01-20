@@ -50,10 +50,12 @@ export function formatTimelineEntry(entry: LogEntry): string {
 }
 
 /**
- * 타임스탬프 문자열을 Date 객체로 파싱
- * @param timestamp ISO 8601 형식 타임스탬프 문자열
- * @returns Date 객체
+ * Parse timestamp string to Date object.
+ * @param timestamp - ISO 8601 format timestamp string
+ * @returns Parsed Date object
  */
 export function parseTimestamp(timestamp: string): Date {
-  return new Date(timestamp);
+  // Handle invalid timestamps gracefully
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
 }

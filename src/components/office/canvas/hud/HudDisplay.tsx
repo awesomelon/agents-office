@@ -1,7 +1,8 @@
 import { Container, Graphics, Text } from "@pixi/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { TextStyle } from "pixi.js";
 import { HUD_BAR_HEIGHT, OFFICE_WIDTH } from "../constants";
+import { useFrameAnimation } from "../hooks/useFrameAnimation";
 
 interface HudDisplayProps {
   toolCallCount: number;
@@ -32,15 +33,7 @@ const HUD_LIMIT_TEXT_STYLE = new TextStyle({
 });
 
 export function HudDisplay({ toolCallCount, avgToolResponseMs, errorCount, agentSwitchCount, rateLimitActive }: HudDisplayProps): JSX.Element {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    if (!rateLimitActive) return;
-    const interval = setInterval(() => {
-      setFrame((f) => (f + 1) % 2);
-    }, 500);
-    return () => clearInterval(interval);
-  }, [rateLimitActive]);
+  const frame = useFrameAnimation(2, 500, rateLimitActive);
 
   const draw = useCallback((g: any) => {
     g.clear();

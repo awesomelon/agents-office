@@ -300,16 +300,23 @@ fn agent_id_for_type(agent_type: crate::models::AgentType) -> &'static str {
     }
 }
 
+/// Desk positions matching TypeScript DESK_CONFIGS.
+/// Note: These values are currently unused by frontend (which uses its own DESK_CONFIGS),
+/// but kept for API consistency.
 fn get_desk_position(agent_type: crate::models::AgentType) -> (f32, f32) {
     use crate::models::AgentType;
+    // Layout: 3-3-2 vertical arrangement
+    // Section A (Y=130): Reader, Searcher, Writer
+    // Section B (Y=320): Editor, Runner, Tester
+    // Section C (Y=520): Planner, Support
     match agent_type {
-        AgentType::Reader => (115.0, 160.0),
-        AgentType::Searcher => (315.0, 160.0),
-        AgentType::Writer => (515.0, 160.0),
-        AgentType::Editor => (715.0, 160.0),
-        AgentType::Runner => (115.0, 360.0),
-        AgentType::Tester => (315.0, 360.0),
-        AgentType::Planner => (515.0, 360.0),
-        AgentType::Support => (715.0, 360.0),
+        AgentType::Reader => (60.0, 130.0),
+        AgentType::Searcher => (150.0, 130.0),
+        AgentType::Writer => (240.0, 130.0),
+        AgentType::Editor => (60.0, 320.0),
+        AgentType::Runner => (150.0, 320.0),
+        AgentType::Tester => (240.0, 320.0),
+        AgentType::Planner => (60.0, 520.0),
+        AgentType::Support => (150.0, 520.0),
     }
 }

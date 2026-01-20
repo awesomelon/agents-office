@@ -106,3 +106,16 @@ export const TIMELINE_COLORS: Record<LogEntryType, string> = {
   session_start: "#facc15", // yellow
   session_end: "#facc15",   // yellow
 };
+
+// Tool-specific colors for visual effects and stamps
+export const TOOL_COLORS = {
+  read: 0x3b82f6,      // blue
+  search: 0x38bdf8,    // sky blue
+  write: 0x22c55e,     // green
+  edit: 0x16a34a,      // dark green
+  run: 0xf59e0b,       // amber
+  plan: 0xec4899,      // pink
+  support: 0xa78bfa,   // purple
+  other: 0x6b7280,     // gray
+  error: 0xef4444,     // red
+} as const;

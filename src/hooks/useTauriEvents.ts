@@ -2,8 +2,9 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAgentStore, useLogStore, useHudStore, type BatchUpdateData, type EffectKind } from "../store";
 import type { Agent, AppEvent, LogEntry } from "../types";
+import { TOOL_COLORS } from "../types";
 
-// Tauri 환경인지 체크 (브라우저에서 npm run dev 실행 시 false)
+/** Check if running in Tauri environment (false when running npm run dev in browser) */
 function isTauriEnv(): boolean {
   return typeof window !== "undefined" && "__TAURI__" in window;
 }
@@ -104,23 +105,40 @@ function isToolActivity(entryType: string): boolean {
   return entryType === "tool_call" || entryType === "tool_result";
 }
 
-// Tool name to visual effect mapping
-function getEffectForTool(toolName: string | null | undefined): { kind: EffectKind; color: number } | null {
+// Unified tool configuration: agent mapping and visual effects
+interface ToolConfig {
+  agentId: string;
+  effect: { kind: EffectKind; color: number };
+}
+
+const TOOL_CONFIG: Record<string, ToolConfig> = {
+  read: { agentId: "reader", effect: { kind: "typeParticles", color: TOOL_COLORS.read } },
+  glob: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
+  grep: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
+  websearch: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
+  webfetch: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
+  write: { agentId: "writer", effect: { kind: "typeParticles", color: TOOL_COLORS.write } },
+  edit: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
+  notebookedit: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
+  editnotebook: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
+  todowrite: { agentId: "planner", effect: { kind: "typeParticles", color: TOOL_COLORS.plan } },
+  task: { agentId: "planner", effect: { kind: "typeParticles", color: TOOL_COLORS.plan } },
+  askuserquestion: { agentId: "support", effect: { kind: "typeParticles", color: TOOL_COLORS.support } },
+  bash: { agentId: "runner", effect: { kind: "runSpark", color: TOOL_COLORS.run } },
+};
+
+const DEFAULT_EFFECT: { kind: EffectKind; color: number } = { kind: "typeParticles", color: TOOL_COLORS.other };
+const TESTER_KEYWORDS = ["git", "test", "npm", "pnpm", "yarn", "cargo"];
+
+function getToolConfig(toolName: string | null | undefined): ToolConfig | null {
   const tool = toolName?.trim()?.toLowerCase();
   if (!tool) return null;
+  return TOOL_CONFIG[tool] ?? null;
+}
 
-  if (tool === "read") return { kind: "typeParticles", color: 0x3b82f6 };
-  if (tool === "glob" || tool === "grep" || tool === "websearch" || tool === "webfetch") {
-    return { kind: "searchPulse", color: 0x38bdf8 };
-  }
-  if (tool === "write") return { kind: "typeParticles", color: 0x22c55e };
-  if (tool === "edit" || tool === "notebookedit" || tool === "editnotebook") {
-    return { kind: "typeParticles", color: 0x16a34a };
-  }
-  if (tool === "bash") return { kind: "runSpark", color: 0xf59e0b };
-  if (tool === "todowrite" || tool === "task") return { kind: "typeParticles", color: 0xec4899 };
-
-  return { kind: "typeParticles", color: 0x6b7280 };
+function getEffectForTool(toolName: string | null | undefined): { kind: EffectKind; color: number } {
+  const config = getToolConfig(toolName);
+  return config?.effect ?? DEFAULT_EFFECT;
 }
 
 interface LogEntryHandlers {
@@ -169,9 +187,8 @@ function handleLogEntry(entry: LogEntry, handlers: LogEntryHandlers): void {
     recordToolCall();
     if (agentId) {
       agentRecordToolCall(agentId);
-      // Enqueue visual effect
       const effect = getEffectForTool(entry.tool_name);
-      if (effect) enqueueEffect(agentId, effect.kind, effect.color);
+      enqueueEffect(agentId, effect.kind, effect.color);
     }
   }
   if (entry.entry_type === "tool_result") recordToolResult();
@@ -192,7 +209,7 @@ function handleLogEntry(entry: LogEntry, handlers: LogEntryHandlers): void {
       setAgentError(agentId, true);
       agentRecordError(agentId);
       // Enqueue error burst effect
-      enqueueEffect(agentId, "errorBurst", 0xef4444, 1000);
+      enqueueEffect(agentId, "errorBurst", TOOL_COLORS.error, 1000);
     }
   } else if (agentId && isActivity) {
     setAgentError(agentId, false);
@@ -212,35 +229,12 @@ function handleLogEntry(entry: LogEntry, handlers: LogEntryHandlers): void {
   }
 }
 
-// Tool name to agent ID mapping
-const TOOL_TO_AGENT: Record<string, string> = {
-  read: "reader",
-  glob: "searcher",
-  grep: "searcher",
-  websearch: "searcher",
-  webfetch: "searcher",
-  write: "writer",
-  edit: "editor",
-  notebookedit: "editor",
-  editnotebook: "editor",
-  todowrite: "planner",
-  task: "planner",
-  askuserquestion: "support",
-};
-
-// Keywords that indicate tester agent for bash commands
-const TESTER_KEYWORDS = ["git", "test", "npm", "pnpm", "yarn", "cargo"];
-
 function inferAgentId(entry: LogEntry): string | null {
   const explicit = entry.agent_id?.trim();
   if (explicit) return explicit;
 
   const tool = entry.tool_name?.trim()?.toLowerCase();
   if (!tool) return null;
-
-  // Direct mapping lookup
-  const mapped = TOOL_TO_AGENT[tool];
-  if (mapped) return mapped;
 
   // Bash: context-dependent (Runner vs Tester)
   if (tool === "bash") {
@@ -249,7 +243,9 @@ function inferAgentId(entry: LogEntry): string | null {
     return isTesterCommand ? "tester" : "runner";
   }
 
-  return "editor";
+  // Use unified config lookup
+  const config = getToolConfig(entry.tool_name);
+  return config?.agentId ?? "editor";
 }
 
 interface BatchUpdateHandlers {
@@ -293,7 +289,7 @@ function handleBatchUpdate(logs: LogEntry[], agents: Agent[], handlers: BatchUpd
     if (entry.entry_type === "error" && agentId) {
       errors[agentId] = true;
       moodErrors.push(agentId);
-      enqueueEffect(agentId, "errorBurst", 0xef4444, 1000);
+      enqueueEffect(agentId, "errorBurst", TOOL_COLORS.error, 1000);
     } else if (agentId && isActivity) {
       errors[agentId] = false;
     }
