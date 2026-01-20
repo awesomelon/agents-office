@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 const GITHUB_OWNER = "awesomelon";
 const GITHUB_REPO = "agents-office";
 const USER_AGENT = "agents-office-cli";
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || null;
 
 const CACHE_DIR = process.env.AGENTS_OFFICE_CACHE_DIR
   ? path.resolve(process.env.AGENTS_OFFICE_CACHE_DIR)
@@ -87,6 +88,14 @@ function withLock(lockPath, fn) {
   }
 }
 
+function toHttpError(statusCode, url, body) {
+  const err = new Error(`HTTP ${statusCode} from ${url}: ${String(body).slice(0, 200)}`);
+  err.statusCode = statusCode;
+  err.url = url;
+  err.body = body;
+  return err;
+}
+
 function httpsGetJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -96,6 +105,7 @@ function httpsGetJson(url) {
         headers: {
           "User-Agent": USER_AGENT,
           Accept: "application/vnd.github+json",
+          ...(GITHUB_TOKEN ? { Authorization: `Bearer ${GITHUB_TOKEN}` } : {}),
         },
       },
       (res) => {
@@ -110,7 +120,7 @@ function httpsGetJson(url) {
               reject(new Error(`Failed to parse JSON from ${url}: ${e.message}`));
             }
           } else {
-            reject(new Error(`HTTP ${res.statusCode} from ${url}: ${body.slice(0, 200)}`));
+            reject(toHttpError(res.statusCode, url, body));
           }
         });
       }
@@ -133,6 +143,7 @@ function downloadToFile(url, destPath, { quiet }) {
         headers: {
           "User-Agent": USER_AGENT,
           Accept: "application/octet-stream",
+          ...(GITHUB_TOKEN ? { Authorization: `Bearer ${GITHUB_TOKEN}` } : {}),
         },
       },
       (res) => {
@@ -147,7 +158,7 @@ function downloadToFile(url, destPath, { quiet }) {
         if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
           file.close(() => {
             fs.rmSync(tmpPath, { force: true });
-            reject(new Error(`Download failed: HTTP ${res.statusCode} ${url}`));
+            reject(toHttpError(res.statusCode, url, ""));
           });
           return;
         }
@@ -218,12 +229,35 @@ function openApp(appPath) {
   return r.status ?? 1;
 }
 
+async function fetchLatestReleaseOrExplain() {
+  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+  try {
+    return await httpsGetJson(url);
+  } catch (err) {
+    // GitHub returns 404 if there are no releases, or if the repo is private without auth.
+    if (err?.statusCode === 404) {
+      throw new Error(
+        [
+          `GitHub Releases latest not found for ${GITHUB_OWNER}/${GITHUB_REPO}.`,
+          `This usually means either:`,
+          `- There is no GitHub Release yet (recommended: create a release like v0.1.3 with Agents-Office-macos.zip), or`,
+          `- The repo is private and you need to set GITHUB_TOKEN for API access.`,
+          ``,
+          `You can also run with a specific tag once releases exist:`,
+          `  npx @j-ho/agents-office --version 0.1.3`,
+        ].join("\n")
+      );
+    }
+    throw err;
+  }
+}
+
 async function resolveReleaseTag(requestedVersion) {
   if (requestedVersion) {
     const v = requestedVersion.startsWith("v") ? requestedVersion.slice(1) : requestedVersion;
     return `v${v}`;
   }
-  const latest = await httpsGetJson(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`);
+  const latest = await fetchLatestReleaseOrExplain();
   if (!latest?.tag_name) throw new Error("GitHub latest release has no tag_name");
   return latest.tag_name;
 }
