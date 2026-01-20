@@ -21,6 +21,15 @@
     "visualization"
   ],
   "type": "module",
+  "bin": {
+    "agents-office": "./cli/agents-office.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "cli/"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
