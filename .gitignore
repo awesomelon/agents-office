@@ -26,3 +26,4 @@ src-tauri/Cargo.lock
 
 
 .npm-cache/
+.cache-test/
