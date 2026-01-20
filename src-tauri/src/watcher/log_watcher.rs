@@ -128,7 +128,8 @@ async fn process_event(
 ) {
     // Collect all logs and agents for batch emit
     let mut all_logs: Vec<LogEntry> = Vec::new();
-    let mut all_agents: Vec<Agent> = Vec::new();
+    // Deduplicate agent updates within a batch to reduce IPC payload.
+    let mut agents_by_id: HashMap<String, Agent> = HashMap::new();
 
     for path in &event.paths {
         // Only process .txt and .jsonl files
@@ -167,18 +168,19 @@ async fn process_event(
                     desk_position: get_desk_position(agent_type),
                 };
 
-                all_agents.push(agent);
+                agents_by_id.insert(agent.id.clone(), agent);
             }
         }
     }
 
     // Emit single batch update instead of individual events
     if !all_logs.is_empty() {
+        let agents: Vec<Agent> = agents_by_id.into_values().collect();
         let _ = app.emit(
             "app-event",
             AppEvent::BatchUpdate {
                 logs: all_logs,
-                agents: all_agents,
+                agents,
             },
         );
     }
@@ -186,14 +188,17 @@ async fn process_event(
 
 fn summarize_current_task(entry: &LogEntry) -> String {
     match entry.entry_type {
-        LogEntryType::ToolCall => entry
-            .tool_name
-            .as_deref()
-            .map_or("Tool call".to_string(), |name| format!("Tool call: {name}")),
-        LogEntryType::ToolResult => entry
-            .tool_name
-            .as_deref()
-            .map_or("Tool result".to_string(), |name| format!("Tool result: {name}")),
+        LogEntryType::ToolCall | LogEntryType::ToolResult => {
+            let prefix = if entry.entry_type == LogEntryType::ToolCall {
+                "Tool call"
+            } else {
+                "Tool result"
+            };
+            entry
+                .tool_name
+                .as_deref()
+                .map_or_else(|| prefix.to_string(), |name| format!("{prefix}: {name}"))
+        }
         LogEntryType::TodoUpdate => "Todo update".to_string(),
         LogEntryType::SessionStart => "Session start".to_string(),
         LogEntryType::SessionEnd => "Session end".to_string(),

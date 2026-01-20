@@ -25,6 +25,7 @@ interface HudState {
   recentEvents: RecentEvent[];
   recentToolResponses: RecentToolResponse[];
   pendingToolCalls: number[]; // timestamps for tool_call events awaiting a tool_result
+  pendingToolCallHead: number; // head index for O(1) dequeue
   rateLimitActive: boolean;
 
   // Actions
@@ -44,40 +45,60 @@ const WINDOW_MS = 60_000; // 60 seconds
 const MAX_RECENT_EVENTS = 2000;
 const MAX_RECENT_TOOL_RESPONSES = 2000;
 const MAX_PENDING_TOOL_CALLS = 200;
+const PENDING_TOOL_CALLS_COMPACT_THRESHOLD = 64;
 
-function countByType(events: RecentEvent[], type: RecentEvent["type"]): number {
-  return events.filter((e) => e.type === type).length;
+function compactPendingCalls(pending: number[], head: number): { pending: number[]; head: number } {
+  if (head <= 0) return { pending, head };
+  if (head < PENDING_TOOL_CALLS_COMPACT_THRESHOLD && head < pending.length / 2) return { pending, head };
+  return { pending: pending.slice(head), head: 0 };
+}
+
+function capPendingCalls(pending: number[], head: number): { pending: number[]; head: number } {
+  const effectiveLen = pending.length - head;
+  if (effectiveLen <= MAX_PENDING_TOOL_CALLS) return { pending, head };
+  // Drop oldest pending calls by advancing head (keeps newest MAX_PENDING_TOOL_CALLS items).
+  return { pending, head: head + (effectiveLen - MAX_PENDING_TOOL_CALLS) };
 }
 
 export const useHudStore = create<HudState>((set, get) => ({
   recentEvents: [],
   recentToolResponses: [],
   pendingToolCalls: [],
+  pendingToolCallHead: 0,
   rateLimitActive: false,
 
   recordToolCall: () => {
     const now = Date.now();
     const event: RecentEvent = { type: "tool_call", timestamp: now };
-    set((state) => ({
-      recentEvents: [
-        ...state.recentEvents,
-        event,
-      ].slice(-MAX_RECENT_EVENTS),
-      pendingToolCalls: [...state.pendingToolCalls, now].slice(-MAX_PENDING_TOOL_CALLS),
-    }));
+    set((state) => {
+      let pending = [...state.pendingToolCalls, now];
+      let head = state.pendingToolCallHead;
+      ({ pending, head } = capPendingCalls(pending, head));
+      ({ pending, head } = compactPendingCalls(pending, head));
+
+      return {
+        recentEvents: [...state.recentEvents, event].slice(-MAX_RECENT_EVENTS),
+        pendingToolCalls: pending,
+        pendingToolCallHead: head,
+      };
+    });
   },
 
   recordToolResult: () => {
     const now = Date.now();
     set((state) => {
-      const [startedAt, ...rest] = state.pendingToolCalls;
+      const startedAt = state.pendingToolCalls[state.pendingToolCallHead];
       if (typeof startedAt !== "number") {
         return state;
       }
 
       const durationMs = Math.max(0, now - startedAt);
+      let pending = state.pendingToolCalls;
+      let head = state.pendingToolCallHead + 1;
+      ({ pending, head } = compactPendingCalls(pending, head));
       return {
-        pendingToolCalls: rest,
+        pendingToolCalls: pending,
+        pendingToolCallHead: head,
         recentToolResponses: [
           ...state.recentToolResponses,
           { timestamp: now, durationMs },
@@ -90,10 +111,7 @@ export const useHudStore = create<HudState>((set, get) => ({
     const now = Date.now();
     const event: RecentEvent = { type: "error", timestamp: now };
     set((state) => ({
-      recentEvents: [
-        ...state.recentEvents,
-        event,
-      ].slice(-MAX_RECENT_EVENTS),
+      recentEvents: [...state.recentEvents, event].slice(-MAX_RECENT_EVENTS),
     }));
   },
 
@@ -101,10 +119,7 @@ export const useHudStore = create<HudState>((set, get) => ({
     const now = Date.now();
     const event: RecentEvent = { type: "agent_switch", timestamp: now };
     set((state) => ({
-      recentEvents: [
-        ...state.recentEvents,
-        event,
-      ].slice(-MAX_RECENT_EVENTS),
+      recentEvents: [...state.recentEvents, event].slice(-MAX_RECENT_EVENTS),
     }));
   },
 
@@ -135,17 +150,23 @@ export const useHudStore = create<HudState>((set, get) => ({
       // Add pending calls for tool_call events
       const newPendingCalls = Array(toolCallCount).fill(now);
       let pendingCalls = [...state.pendingToolCalls, ...newPendingCalls];
+      let head = state.pendingToolCallHead;
+      ({ pending: pendingCalls, head } = capPendingCalls(pendingCalls, head));
 
       // Process tool results against pending calls
       const newToolResponses: RecentToolResponse[] = [];
-      for (let i = 0; i < toolResultCount && pendingCalls.length > 0; i++) {
-        const startedAt = pendingCalls.shift()!;
+      for (let i = 0; i < toolResultCount; i++) {
+        const startedAt = pendingCalls[head];
+        if (typeof startedAt !== "number") break;
+        head++;
         newToolResponses.push({ timestamp: now, durationMs: Math.max(0, now - startedAt) });
       }
+      ({ pending: pendingCalls, head } = compactPendingCalls(pendingCalls, head));
 
       return {
         recentEvents: [...state.recentEvents, ...newEvents].slice(-MAX_RECENT_EVENTS),
-        pendingToolCalls: pendingCalls.slice(-MAX_PENDING_TOOL_CALLS),
+        pendingToolCalls: pendingCalls,
+        pendingToolCallHead: head,
         recentToolResponses: [...state.recentToolResponses, ...newToolResponses].slice(-MAX_RECENT_TOOL_RESPONSES),
       };
     });
@@ -157,11 +178,19 @@ export const useHudStore = create<HudState>((set, get) => ({
 
   pruneOldData: () => {
     const cutoff = Date.now() - WINDOW_MS;
-    set((state) => ({
-      recentEvents: state.recentEvents.filter((e) => e.timestamp > cutoff),
-      recentToolResponses: state.recentToolResponses.filter((r) => r.timestamp > cutoff),
-      pendingToolCalls: state.pendingToolCalls.filter((ts) => ts > cutoff),
-    }));
+    set((state) => {
+      // Normalize pending calls (drop consumed head) before time-based pruning.
+      let pending = state.pendingToolCalls.slice(state.pendingToolCallHead);
+      pending = pending.filter((ts) => ts > cutoff);
+      pending = pending.slice(-MAX_PENDING_TOOL_CALLS);
+
+      return {
+        recentEvents: state.recentEvents.filter((e) => e.timestamp > cutoff),
+        recentToolResponses: state.recentToolResponses.filter((r) => r.timestamp > cutoff),
+        pendingToolCalls: pending,
+        pendingToolCallHead: 0,
+      };
+    });
   },
 
   getMetrics: () => {
@@ -171,11 +200,21 @@ export const useHudStore = create<HudState>((set, get) => ({
       ? Math.round(recentToolResponses.reduce((acc, r) => acc + r.durationMs, 0) / recentToolResponses.length)
       : null;
 
+    // Single-pass counting to avoid repeated filtering costs.
+    let toolCallCount = 0;
+    let errorCount = 0;
+    let agentSwitchCount = 0;
+    for (const e of recentEvents) {
+      if (e.type === "tool_call") toolCallCount++;
+      else if (e.type === "error") errorCount++;
+      else agentSwitchCount++;
+    }
+
     return {
-      toolCallCount: countByType(recentEvents, "tool_call"),
+      toolCallCount,
       avgToolResponseMs,
-      errorCount: countByType(recentEvents, "error"),
-      agentSwitchCount: countByType(recentEvents, "agent_switch"),
+      errorCount,
+      agentSwitchCount,
       rateLimitActive,
     };
   },
