@@ -45,19 +45,19 @@ export interface DeskConfig {
 }
 
 export const DESK_CONFIGS: DeskConfig[] = [
-  // Section A: 상단 3개 (facing up, 벽 밀착) - 좌측 정렬
+  // Section A: 상단 3개 (facing up, 벽 밀착) - 책상 간격 0px (밀착)
   { id: "reader", position: [60, 130], agentType: "reader", label: "Reader", facing: "up" },
-  { id: "searcher", position: [200, 130], agentType: "searcher", label: "Searcher", facing: "up" },
-  { id: "writer", position: [340, 130], agentType: "writer", label: "Writer", facing: "up" },
+  { id: "searcher", position: [150, 130], agentType: "searcher", label: "Searcher", facing: "up" },
+  { id: "writer", position: [240, 130], agentType: "writer", label: "Writer", facing: "up" },
 
-  // Section B: 중단 3개 (facing down) - 좌측 정렬
+  // Section B: 중단 3개 (facing down) - 책상 간격 0px (밀착)
   { id: "editor", position: [60, 320], agentType: "editor", label: "Editor", facing: "down" },
-  { id: "runner", position: [200, 320], agentType: "runner", label: "Runner", facing: "down" },
-  { id: "tester", position: [340, 320], agentType: "tester", label: "Tester", facing: "down" },
+  { id: "runner", position: [150, 320], agentType: "runner", label: "Runner", facing: "down" },
+  { id: "tester", position: [240, 320], agentType: "tester", label: "Tester", facing: "down" },
 
-  // Section C: 하단 2개 (facing up) - 좌측 정렬
+  // Section C: 하단 2개 (facing up) - 책상 간격 0px (밀착)
   { id: "planner", position: [60, 520], agentType: "planner", label: "Planner", facing: "up" },
-  { id: "support", position: [200, 520], agentType: "support", label: "Support", facing: "up" },
+  { id: "support", position: [150, 520], agentType: "support", label: "Support", facing: "up" },
 ];
 
 export const AGENT_COLORS: Record<AgentType, number> = {

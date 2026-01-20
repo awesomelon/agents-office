@@ -91,9 +91,28 @@ export const WALKABLE_BANDS = [
   { minY: 565, maxY: 670 }, // Section C 아래 ~ 바닥
 ] as const;
 export const WALK_X_MIN = 30;
-export const WALK_X_MAX = 520; // 캔버스 550 기준
+export const WALK_X_MAX = 295; // 책상 오른쪽 끝 (240 + 45) + 여백
 
-// Partition
-export const PARTITION_COLOR = 0xa3e635; // lime-ish
+// Partition (horizontal dividers between desk sections)
+export const PARTITION_COLOR = 0xa3e635;
 export const PARTITION_BORDER = 0x4d7c0f;
+
+// Right wall configuration
+export const RIGHT_WALL_START_X = 500; // 오른쪽 벽 시작 위치
+export const RIGHT_WALL_WIDTH = OFFICE_WIDTH - RIGHT_WALL_START_X; // 50px
+
+// Coat hanger (옷걸이/행거)
+export const COAT_HANGER_X = 420;
+export const COAT_HANGER_Y = 80;
+export const COAT_HANGER_WIDTH = 40;
+export const COAT_HANGER_HEIGHT = 80;
+
+// Locker (사물함) - 2열 5행 = 10개
+export const LOCKER_X = 420;
+export const LOCKER_Y = 180;
+export const LOCKER_WIDTH = 52;  // 전체 너비 (2열 × 24px + 여백)
+export const LOCKER_HEIGHT = 130; // 전체 높이 (5행 × 24px + 여백)
+export const LOCKER_CELL_SIZE = 24; // 각 사물함 칸 크기
+export const LOCKER_COLS = 2;  // 열 수
+export const LOCKER_ROWS = 5;  // 행 수
 

@@ -4,13 +4,26 @@ import type { ViewportRect } from "../types";
 import {
   BOTTOM_WINDOW_BAND_HEIGHT,
   BOTTOM_WINDOW_BAND_MARGIN,
+  COAT_HANGER_HEIGHT,
+  COAT_HANGER_WIDTH,
+  COAT_HANGER_X,
+  COAT_HANGER_Y,
   ENTRANCE_HEIGHT,
   ENTRANCE_PADDING,
   ENTRANCE_TOP_Y,
   ENTRANCE_WIDTH,
   FLOOR_START_Y,
+  LOCKER_CELL_SIZE,
+  LOCKER_COLS,
+  LOCKER_HEIGHT,
+  LOCKER_ROWS,
+  LOCKER_WIDTH,
+  LOCKER_X,
+  LOCKER_Y,
   OFFICE_HEIGHT,
   OFFICE_WIDTH,
+  RIGHT_WALL_START_X,
+  RIGHT_WALL_WIDTH,
   SUNFLOWER_FRAME_GAP,
   TILE_BASE_COLOR,
   TILE_BORDER_COLOR,
@@ -151,6 +164,10 @@ function drawRepeatedDecorations(g: any, viewport: ViewportRect): void {
     drawSunflowerFrame(g, ox);
     drawEntrance(g, ox);
   }
+  // Draw right wall (always visible when viewport overlaps)
+  drawRightWall(g, viewport);
+  drawCoatHanger(g);
+  drawLocker(g);
   if (shouldDrawBottomBand(viewport)) {
     drawBottomWindowsBand(g, ox);
   }
@@ -381,43 +398,312 @@ function drawBottomWindowsBand(g: any, offsetX: number): void {
   // Band backdrop (slightly darker)
   g.lineStyle(0);
   g.beginFill(0x0f172a, 0.12);
-  g.drawRect(offsetX, bandY, OFFICE_WIDTH, BOTTOM_WINDOW_BAND_HEIGHT);
+  g.drawRect(offsetX, bandY, RIGHT_WALL_START_X, BOTTOM_WINDOW_BAND_HEIGHT);
   g.endFill();
 
-  // Window panels
-  const windowCount = 4;
+  // Single large window panel
   const gutter = 18;
-  const panelW = Math.floor((OFFICE_WIDTH - gutter * (windowCount + 1)) / windowCount);
+  const panelX = offsetX + gutter;
+  const panelW = RIGHT_WALL_START_X - gutter * 2; // 오른쪽 벽 전까지
   const panelH = 44;
   const panelY = bandY + Math.floor((BOTTOM_WINDOW_BAND_HEIGHT - panelH) / 2);
 
-  for (let i = 0; i < windowCount; i++) {
-    const x = offsetX + gutter + i * (panelW + gutter);
+  // Glow
+  g.beginFill(0x60a5fa, 0.12);
+  g.drawRect(panelX - 4, panelY - 4, panelW + 8, panelH + 8);
+  g.endFill();
 
-    // Glow
-    g.beginFill(0x60a5fa, 0.12);
-    g.drawRect(x - 4, panelY - 4, panelW + 8, panelH + 8);
-    g.endFill();
+  // Glass
+  g.beginFill(0x93c5fd, 0.28);
+  g.drawRect(panelX, panelY, panelW, panelH);
+  g.endFill();
 
-    // Glass
-    g.beginFill(0x93c5fd, 0.28);
-    g.drawRect(x, panelY, panelW, panelH);
-    g.endFill();
+  // Reflection stripes (distributed across the window)
+  g.beginFill(0xffffff, 0.10);
+  g.drawRect(panelX + 10, panelY + 6, 4, panelH - 12);
+  g.drawRect(panelX + 22, panelY + 10, 3, panelH - 20);
+  g.drawRect(panelX + panelW * 0.4, panelY + 8, 4, panelH - 16);
+  g.drawRect(panelX + panelW * 0.7, panelY + 6, 3, panelH - 12);
+  g.endFill();
 
-    // Reflection stripes
-    g.beginFill(0xffffff, 0.10);
-    g.drawRect(x + 6, panelY + 6, 4, panelH - 12);
-    g.drawRect(x + 16, panelY + 10, 3, panelH - 20);
-    g.endFill();
+  // Frame
+  g.lineStyle(2, 0x334155, 0.7);
+  g.drawRect(panelX, panelY, panelW, panelH);
 
-    // Frame
-    g.lineStyle(2, 0x334155, 0.7);
-    g.drawRect(x, panelY, panelW, panelH);
-    g.lineStyle(1, 0x334155, 0.5);
-    g.moveTo(x + Math.floor(panelW / 2), panelY);
-    g.lineTo(x + Math.floor(panelW / 2), panelY + panelH);
-  }
+  // Central mullion (수직 분할선)
+  g.lineStyle(1, 0x334155, 0.5);
+  g.moveTo(panelX + Math.floor(panelW / 2), panelY);
+  g.lineTo(panelX + Math.floor(panelW / 2), panelY + panelH);
 
   g.lineStyle(0);
+}
+
+function drawRightWall(g: any, viewport: ViewportRect): void {
+  const wallX = RIGHT_WALL_START_X;
+  const wallY = WALL_HEIGHT; // 상단 벽 아래부터 시작
+  const wallHeight = OFFICE_HEIGHT - wallY;
+
+  // Check if viewport overlaps with right wall
+  if (viewport.x + viewport.width < wallX) return;
+
+  // Main wall fill (beige)
+  g.beginFill(WALL_BEIGE_BASE);
+  g.drawRect(wallX, wallY, RIGHT_WALL_WIDTH, wallHeight);
+  g.endFill();
+
+  // Texture stripes (vertical)
+  g.beginFill(WALL_BEIGE_STRIPE, 0.35);
+  for (let x = wallX; x < OFFICE_WIDTH; x += 12) {
+    g.drawRect(x, wallY, 4, wallHeight);
+  }
+  g.endFill();
+
+  // Left edge trim (wall border)
+  g.lineStyle(3, WALL_BEIGE_TRIM, 1);
+  g.moveTo(wallX, wallY);
+  g.lineTo(wallX, OFFICE_HEIGHT);
+  g.lineStyle(0);
+
+  // Shadow on left edge
+  g.beginFill(WALL_BEIGE_SHADOW, 0.4);
+  g.drawRect(wallX, wallY, 8, wallHeight);
+  g.endFill();
+
+  // Connect to top wall
+  g.beginFill(WALL_BEIGE_BASE);
+  g.drawRect(wallX, 0, RIGHT_WALL_WIDTH, WALL_HEIGHT);
+  g.endFill();
+  g.beginFill(WALL_BEIGE_STRIPE, 0.35);
+  for (let x = wallX; x < OFFICE_WIDTH; x += 12) {
+    g.drawRect(x, 0, 4, WALL_HEIGHT);
+  }
+  g.endFill();
+}
+
+function drawCoatHanger(g: any): void {
+  const x = COAT_HANGER_X;
+  const y = COAT_HANGER_Y;
+  const w = COAT_HANGER_WIDTH;
+  const h = COAT_HANGER_HEIGHT;
+
+  // Shadow
+  g.beginFill(0x000000, 0.15);
+  g.drawRect(x + 3, y + 3, w, h);
+  g.endFill();
+
+  // Back panel (wood)
+  g.beginFill(0x8b5a2b, 0.95);
+  g.drawRect(x, y, w, 12);
+  g.endFill();
+
+  // Wood grain on back panel
+  g.beginFill(0x6b4423, 0.5);
+  g.drawRect(x + 4, y + 2, 20, 2);
+  g.drawRect(x + 30, y + 5, 18, 2);
+  g.drawRect(x + 8, y + 8, 25, 2);
+  g.endFill();
+
+  // Hooks (3개)
+  const hookColor = 0xc0c0c0; // silver
+  const hookHighlight = 0xe8e8e8;
+  const hookShadow = 0x808080;
+  const hookSpacing = 18;
+  const hookStartX = x + 12;
+
+  for (let i = 0; i < 3; i++) {
+    const hx = hookStartX + i * hookSpacing;
+    const hy = y + 12;
+
+    // Hook stem
+    g.beginFill(hookColor);
+    g.drawRect(hx, hy, 4, 16);
+    g.endFill();
+
+    // Hook curve (simplified pixel art)
+    g.beginFill(hookColor);
+    g.drawRect(hx - 4, hy + 16, 12, 4);
+    g.drawRect(hx - 4, hy + 20, 4, 8);
+    g.endFill();
+
+    // Highlight
+    g.beginFill(hookHighlight, 0.6);
+    g.drawRect(hx, hy, 1, 16);
+    g.endFill();
+
+    // Shadow
+    g.beginFill(hookShadow, 0.4);
+    g.drawRect(hx + 3, hy, 1, 16);
+    g.endFill();
+  }
+
+  // Hanging coat (on middle hook) - pixel art style
+  const coatX = hookStartX + hookSpacing - 8;
+  const coatY = y + 36;
+
+  // Coat body (dark blue)
+  g.beginFill(0x1e3a5f);
+  g.drawRect(coatX, coatY, 20, 50);
+  g.endFill();
+
+  // Coat collar
+  g.beginFill(0x2d4a6f);
+  g.drawRect(coatX + 2, coatY, 16, 8);
+  g.endFill();
+
+  // Coat highlight
+  g.beginFill(0x3d5a7f, 0.5);
+  g.drawRect(coatX + 2, coatY + 10, 4, 30);
+  g.endFill();
+
+  // Coat buttons
+  g.beginFill(0xd4af37);
+  g.drawRect(coatX + 9, coatY + 16, 3, 3);
+  g.drawRect(coatX + 9, coatY + 26, 3, 3);
+  g.drawRect(coatX + 9, coatY + 36, 3, 3);
+  g.endFill();
+
+  // Hanging bag (on right hook)
+  const bagX = hookStartX + hookSpacing * 2 - 6;
+  const bagY = y + 32;
+
+  // Bag strap
+  g.beginFill(0x8b4513);
+  g.drawRect(bagX + 6, bagY - 4, 3, 10);
+  g.endFill();
+
+  // Bag body
+  g.beginFill(0xa0522d);
+  g.drawRect(bagX, bagY + 6, 16, 24);
+  g.endFill();
+
+  // Bag flap
+  g.beginFill(0x8b4513);
+  g.drawRect(bagX, bagY + 6, 16, 8);
+  g.endFill();
+
+  // Bag buckle
+  g.beginFill(0xd4af37);
+  g.drawRect(bagX + 6, bagY + 12, 4, 3);
+  g.endFill();
+}
+
+function drawLocker(g: any): void {
+  const x = LOCKER_X;
+  const y = LOCKER_Y;
+  const w = LOCKER_WIDTH;
+  const h = LOCKER_HEIGHT;
+  const cellSize = LOCKER_CELL_SIZE;
+  const cols = LOCKER_COLS;
+  const rows = LOCKER_ROWS;
+
+  // Shadow
+  g.beginFill(0x000000, 0.18);
+  g.drawRect(x + 3, y + 3, w, h);
+  g.endFill();
+
+  // Main locker body (metal gray frame)
+  g.beginFill(0x4b5563);
+  g.drawRect(x, y, w, h);
+  g.endFill();
+
+  // Draw each locker cell (2열 5행 = 10개)
+  const cellPadding = 2;
+  const innerCellSize = cellSize - cellPadding;
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cellX = x + 2 + col * cellSize;
+      const cellY = y + 2 + row * cellSize;
+      const cellNum = row * cols + col + 1; // 1~10
+
+      // Cell background (lighter gray door)
+      g.beginFill(0x9ca3af);
+      g.drawRect(cellX, cellY, innerCellSize, innerCellSize);
+      g.endFill();
+
+      // Cell border
+      g.lineStyle(1, 0x374151, 0.8);
+      g.drawRect(cellX, cellY, innerCellSize, innerCellSize);
+      g.lineStyle(0);
+
+      // Vent slots (2 horizontal lines at top)
+      g.beginFill(0x374151, 0.7);
+      g.drawRect(cellX + 4, cellY + 3, innerCellSize - 8, 2);
+      g.drawRect(cellX + 4, cellY + 6, innerCellSize - 8, 2);
+      g.endFill();
+
+      // Handle (small vertical bar on right side)
+      g.beginFill(0x374151);
+      g.drawRect(cellX + innerCellSize - 5, cellY + 10, 3, 6);
+      g.endFill();
+      // Handle highlight
+      g.beginFill(0x6b7280, 0.6);
+      g.drawRect(cellX + innerCellSize - 5, cellY + 10, 1, 6);
+      g.endFill();
+
+      // Number (1~10) - simple pixel text
+      drawLockerNumber(g, cellX + 3, cellY + innerCellSize - 7, cellNum);
+    }
+  }
+
+  // Top edge highlight
+  g.beginFill(0xd1d5db, 0.5);
+  g.drawRect(x, y, w, 2);
+  g.endFill();
+}
+
+// 사물함 번호 그리기 (1~10 픽셀 텍스트)
+function drawLockerNumber(g: any, x: number, y: number, num: number): void {
+  const color = 0x1f2937;
+
+  // 숫자별 픽셀 패턴 (5x5 그리드, 스케일 0.6)
+  const patterns: Record<number, number[][]> = {
+    1: [[0,1],[1,1],[0,1],[0,1],[0,1]],
+    2: [[1,1],[0,1],[1,1],[1,0],[1,1]],
+    3: [[1,1],[0,1],[1,1],[0,1],[1,1]],
+    4: [[1,1],[1,1],[1,1],[0,1],[0,1]],
+    5: [[1,1],[1,0],[1,1],[0,1],[1,1]],
+    6: [[1,1],[1,0],[1,1],[1,1],[1,1]],
+    7: [[1,1],[0,1],[0,1],[0,1],[0,1]],
+    8: [[1,1],[1,1],[1,1],[1,1],[1,1]],
+    9: [[1,1],[1,1],[1,1],[0,1],[1,1]],
+    0: [[1,1],[1,1],[1,1],[1,1],[1,1]],
+  };
+
+  g.beginFill(color, 0.8);
+
+  if (num < 10) {
+    // 한 자리 숫자
+    const pattern = patterns[num];
+    for (let py = 0; py < pattern.length; py++) {
+      for (let px = 0; px < pattern[py].length; px++) {
+        if (pattern[py][px]) {
+          g.drawRect(x + px * 2 + 4, y + py, 2, 1);
+        }
+      }
+    }
+  } else {
+    // 10 (두 자리)
+    const p1 = patterns[1];
+    const p0 = patterns[0];
+    // "1"
+    for (let py = 0; py < p1.length; py++) {
+      for (let px = 0; px < p1[py].length; px++) {
+        if (p1[py][px]) {
+          g.drawRect(x + px * 2, y + py, 2, 1);
+        }
+      }
+    }
+    // "0"
+    for (let py = 0; py < p0.length; py++) {
+      for (let px = 0; px < p0[py].length; px++) {
+        if (p0[py][px]) {
+          g.drawRect(x + px * 2 + 6, y + py, 2, 1);
+        }
+      }
+    }
+  }
+
+  g.endFill();
 }
 

@@ -12,4 +12,25 @@ export default defineConfig({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // PixiJS (~420 kB) - 가장 큰 의존성
+          pixi: ["pixi.js", "@pixi/react"],
+          // React (~140 kB)
+          react: ["react", "react-dom"],
+          // Tauri APIs (~30 kB)
+          tauri: [
+            "@tauri-apps/api",
+            "@tauri-apps/plugin-fs",
+            "@tauri-apps/plugin-shell",
+          ],
+          // 상태 관리 (~10 kB)
+          vendor: ["zustand"],
+        },
+      },
+    },
+  },
 });
