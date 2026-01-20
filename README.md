@@ -1,6 +1,6 @@
 # Agents Office
 
-Claude Code가 작업하는 과정을 **사무실 속 에이전트(Researcher/Coder/Reviewer/Manager)**로 시각화하는 Tauri 데스크톱 앱입니다.  
+Claude Code가 작업하는 과정을 **사무실 속 에이전트(Reader/Searcher/Writer/Editor/Runner/Tester/Planner/Support)**로 시각화하는 Tauri 데스크톱 앱입니다.  
 로컬의 Claude 로그(`$HOME/.claude/**`)를 감시(watch)하고, 이벤트를 프론트엔드(PixiJS 캔버스 + Inbox 로그 패널)로 스트리밍합니다.
 
 ![Agents Office screenshot](./image.png)
@@ -9,6 +9,48 @@ Claude Code가 작업하는 과정을 **사무실 속 에이전트(Researcher/Co
 - **에이전트 시각화**: 상태(Idle/Working/Thinking/Passing/Error)를 픽셀 아트 스타일로 표시
 - **Inbox 로그**: Claude 로그 라인을 `LogEntry`로 파싱해 최근 항목을 표시(최대 100개)
 - **Watcher 상태 표시**: `Watching/Idle`, 세션 ID 표시(이벤트 기반)
+
+## 에이전트 UI 레전드 (표정/아이콘)
+
+### 에이전트 타입(역할) & 색상
+- **Reader**: 입력/파일 내용을 읽고 요약하는 역할 (색상 `#60A5FA`)
+- **Searcher**: 코드/파일/웹 검색을 수행하는 역할 (색상 `#38BDF8`)
+- **Writer**: 새로운 파일/코드를 생성하는 역할 (색상 `#4ADE80`)
+- **Editor**: 기존 코드를 수정하는 역할 (색상 `#22C55E`)
+- **Runner**: 명령 실행(일반 Bash 등)을 담당 (색상 `#FBBF24`)
+- **Tester**: 테스트/빌드/검증 성격의 실행을 담당 (색상 `#F97316`)
+- **Planner**: 할 일/계획 수립 및 작업 위임을 담당 (색상 `#F472B6`)
+- **Support**: 사용자 질문/보조 역할 (색상 `#A78BFA`)
+
+### 상태(Idle/Working/Thinking/Passing/Error) 표시
+- **머리 옆 상태 점(Indicator)**: 상태에 따라 색이 바뀝니다.
+  - `idle`: `#6B7280`
+  - `working`: `#22C55E`
+  - `thinking`: `#3B82F6`
+  - `passing`: `#A855F7`
+  - `error`: `#EF4444`
+- **에러 배지**: `error` 상태일 때 머리 위에 빨간 느낌표 배지가 표시됩니다.
+- **책상 모니터 화면**
+  - `idle`: 어두운 화면 + 스캔라인
+  - `working`: 에이전트 색상의 코드 라인 스크롤 + 커서 깜빡임
+  - `thinking`: 로딩 점(3개) + 아이콘(원형 “뇌/기어” 느낌)
+  - `passing`: 오른쪽으로 이동하는 화살표 + 전송 아이콘
+  - `error`: 붉은 플래시 + X 표시
+
+### 표정(무드) 표시
+표정은 “status”와 별개로 무드에 따라 눈/눈썹/입 주변이 달라집니다.
+- **neutral**: 기본 표정
+- **focused**: 최근 tool call 등으로 집중 상태(눈썹이 살짝 내려가며, 입이 약간 미소)
+- **stressed**: 에러 직후/에러 상태에서 긴장(걱정 눈썹 + 땀방울)
+- **blocked**: 레이트리밋 등으로 막힌 상태(감은 눈 + Z 표시)
+
+### 에러/레이트리밋(대기) 추가 표시
+- **빨간 경고등**: 에이전트에 에러가 감지되면 책상 옆 경고등이 깜빡입니다.
+- **“휴가중” 표지판 + 대기 표시**: 레이트리밋 등으로 막힌 상태에서 “휴가중” 표지판과 모래시계/점(대기)이 표시됩니다.
+
+### 말풍선(작업 요약)
+- `idle`이 아닐 때 말풍선이 표시되며, Tool call 이름을 한국어로 요약해 보여줍니다(예: `Read` → “파일 읽는 중”).
+- 말풍선은 길면 잘려서 표시되고, 일정 시간 업데이트가 없으면 자동으로 사라집니다.
 
 ## 요구사항
 - **Node.js**: 18 이상 권장
