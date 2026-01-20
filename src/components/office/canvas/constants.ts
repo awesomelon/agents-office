@@ -110,9 +110,9 @@ export const COAT_HANGER_HEIGHT = 80;
 // Locker (사물함) - 2열 5행 = 10개
 export const LOCKER_X = 420;
 export const LOCKER_Y = 180;
-export const LOCKER_WIDTH = 52;  // 전체 너비 (2열 × 24px + 여백)
+export const LOCKER_WIDTH = 52; // 전체 너비 (2열 × 24px + 여백)
 export const LOCKER_HEIGHT = 130; // 전체 높이 (5행 × 24px + 여백)
 export const LOCKER_CELL_SIZE = 24; // 각 사물함 칸 크기
-export const LOCKER_COLS = 2;  // 열 수
-export const LOCKER_ROWS = 5;  // 행 수
+export const LOCKER_COLS = 2; // 열 수
+export const LOCKER_ROWS = 5; // 행 수
 

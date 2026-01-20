@@ -43,7 +43,11 @@ import {
 import { adjustColor, hash2dInt, rand01FromHash } from "../math";
 import { shouldDrawBottomBand, shouldDrawTopBand } from "../layout";
 
-export function OfficeBackground({ viewport }: { viewport: ViewportRect }): JSX.Element {
+interface OfficeBackgroundProps {
+  viewport: ViewportRect;
+}
+
+export function OfficeBackground({ viewport }: OfficeBackgroundProps): JSX.Element {
   const draw = useCallback((g: any) => {
     g.clear();
 
@@ -149,7 +153,7 @@ export function OfficeBackground({ viewport }: { viewport: ViewportRect }): JSX.
       }
     }
 
-    // Entrance + bottom windows (repeat per OFFICE_WIDTH segment)
+    // Entrance + bottom windows + right-side props.
     // Bottom band can be skipped when viewport doesn't intersect it.
     drawRepeatedDecorations(g, viewport);
   }, [viewport]);
@@ -442,6 +446,9 @@ function drawRightWall(g: any, viewport: ViewportRect): void {
   const wallX = RIGHT_WALL_START_X;
   const wallY = WALL_HEIGHT; // 상단 벽 아래부터 시작
   const wallHeight = OFFICE_HEIGHT - wallY;
+  const stripeStep = 12;
+  const stripeWidth = 4;
+  const leftShadowWidth = 8;
 
   // Check if viewport overlaps with right wall
   if (viewport.x + viewport.width < wallX) return;
@@ -453,8 +460,8 @@ function drawRightWall(g: any, viewport: ViewportRect): void {
 
   // Texture stripes (vertical)
   g.beginFill(WALL_BEIGE_STRIPE, 0.35);
-  for (let x = wallX; x < OFFICE_WIDTH; x += 12) {
-    g.drawRect(x, wallY, 4, wallHeight);
+  for (let x = wallX; x < OFFICE_WIDTH; x += stripeStep) {
+    g.drawRect(x, wallY, stripeWidth, wallHeight);
   }
   g.endFill();
 
@@ -466,7 +473,7 @@ function drawRightWall(g: any, viewport: ViewportRect): void {
 
   // Shadow on left edge
   g.beginFill(WALL_BEIGE_SHADOW, 0.4);
-  g.drawRect(wallX, wallY, 8, wallHeight);
+  g.drawRect(wallX, wallY, leftShadowWidth, wallHeight);
   g.endFill();
 
   // Connect to top wall
@@ -474,8 +481,8 @@ function drawRightWall(g: any, viewport: ViewportRect): void {
   g.drawRect(wallX, 0, RIGHT_WALL_WIDTH, WALL_HEIGHT);
   g.endFill();
   g.beginFill(WALL_BEIGE_STRIPE, 0.35);
-  for (let x = wallX; x < OFFICE_WIDTH; x += 12) {
-    g.drawRect(x, 0, 4, WALL_HEIGHT);
+  for (let x = wallX; x < OFFICE_WIDTH; x += stripeStep) {
+    g.drawRect(x, 0, stripeWidth, WALL_HEIGHT);
   }
   g.endFill();
 }
@@ -595,10 +602,13 @@ function drawLocker(g: any): void {
   const cellSize = LOCKER_CELL_SIZE;
   const cols = LOCKER_COLS;
   const rows = LOCKER_ROWS;
+  const shadowOffset = 3;
+  const framePadding = 2;
+  const cellPadding = 2;
 
   // Shadow
   g.beginFill(0x000000, 0.18);
-  g.drawRect(x + 3, y + 3, w, h);
+  g.drawRect(x + shadowOffset, y + shadowOffset, w, h);
   g.endFill();
 
   // Main locker body (metal gray frame)
@@ -607,13 +617,12 @@ function drawLocker(g: any): void {
   g.endFill();
 
   // Draw each locker cell (2열 5행 = 10개)
-  const cellPadding = 2;
   const innerCellSize = cellSize - cellPadding;
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      const cellX = x + 2 + col * cellSize;
-      const cellY = y + 2 + row * cellSize;
+      const cellX = x + framePadding + col * cellSize;
+      const cellY = y + framePadding + row * cellSize;
       const cellNum = row * cols + col + 1; // 1~10
 
       // Cell background (lighter gray door)
@@ -655,53 +664,51 @@ function drawLocker(g: any): void {
 // 사물함 번호 그리기 (1~10 픽셀 텍스트)
 function drawLockerNumber(g: any, x: number, y: number, num: number): void {
   const color = 0x1f2937;
+  const pixelWidth = 2;
+  const pixelHeight = 1;
+  const pixelStepX = 2;
+  const pixelStepY = 1;
+  const singleDigitXOffset = 4;
+  const twoDigitSecondXOffset = 6;
 
-  // 숫자별 픽셀 패턴 (5x5 그리드, 스케일 0.6)
-  const patterns: Record<number, number[][]> = {
-    1: [[0,1],[1,1],[0,1],[0,1],[0,1]],
-    2: [[1,1],[0,1],[1,1],[1,0],[1,1]],
-    3: [[1,1],[0,1],[1,1],[0,1],[1,1]],
-    4: [[1,1],[1,1],[1,1],[0,1],[0,1]],
-    5: [[1,1],[1,0],[1,1],[0,1],[1,1]],
-    6: [[1,1],[1,0],[1,1],[1,1],[1,1]],
-    7: [[1,1],[0,1],[0,1],[0,1],[0,1]],
-    8: [[1,1],[1,1],[1,1],[1,1],[1,1]],
-    9: [[1,1],[1,1],[1,1],[0,1],[1,1]],
-    0: [[1,1],[1,1],[1,1],[1,1],[1,1]],
-  };
+  type Digit = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+
+  // 숫자별 픽셀 패턴 (2x5 그리드). 각 픽셀은 2x1 사각형으로 렌더링.
+  const digitPatterns = {
+    0: [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]],
+    1: [[0, 1], [1, 1], [0, 1], [0, 1], [0, 1]],
+    2: [[1, 1], [0, 1], [1, 1], [1, 0], [1, 1]],
+    3: [[1, 1], [0, 1], [1, 1], [0, 1], [1, 1]],
+    4: [[1, 1], [1, 1], [1, 1], [0, 1], [0, 1]],
+    5: [[1, 1], [1, 0], [1, 1], [0, 1], [1, 1]],
+    6: [[1, 1], [1, 0], [1, 1], [1, 1], [1, 1]],
+    7: [[1, 1], [0, 1], [0, 1], [0, 1], [0, 1]],
+    8: [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]],
+    9: [[1, 1], [1, 1], [1, 1], [0, 1], [1, 1]],
+  } as const satisfies Record<Digit, readonly (readonly (0 | 1)[])[]>;
+
+  function drawDigit(digit: Digit, baseX: number): void {
+    const pattern = digitPatterns[digit];
+    for (let py = 0; py < pattern.length; py++) {
+      for (let px = 0; px < pattern[py].length; px++) {
+        if (pattern[py][px]) {
+          g.drawRect(baseX + px * pixelStepX, y + py * pixelStepY, pixelWidth, pixelHeight);
+        }
+      }
+    }
+  }
 
   g.beginFill(color, 0.8);
 
   if (num < 10) {
     // 한 자리 숫자
-    const pattern = patterns[num];
-    for (let py = 0; py < pattern.length; py++) {
-      for (let px = 0; px < pattern[py].length; px++) {
-        if (pattern[py][px]) {
-          g.drawRect(x + px * 2 + 4, y + py, 2, 1);
-        }
-      }
-    }
+    drawDigit(num as Digit, x + singleDigitXOffset);
   } else {
     // 10 (두 자리)
-    const p1 = patterns[1];
-    const p0 = patterns[0];
     // "1"
-    for (let py = 0; py < p1.length; py++) {
-      for (let px = 0; px < p1[py].length; px++) {
-        if (p1[py][px]) {
-          g.drawRect(x + px * 2, y + py, 2, 1);
-        }
-      }
-    }
+    drawDigit(1, x);
     // "0"
-    for (let py = 0; py < p0.length; py++) {
-      for (let px = 0; px < p0[py].length; px++) {
-        if (p0[py][px]) {
-          g.drawRect(x + px * 2 + 6, y + py, 2, 1);
-        }
-      }
-    }
+    drawDigit(0, x + twoDigitSecondXOffset);
   }
 
   g.endFill();

@@ -44,20 +44,28 @@ export interface DeskConfig {
   facing?: "up" | "down";
 }
 
+const DESK_X_LEFT = 60;
+const DESK_X_MIDDLE = 150;
+const DESK_X_RIGHT = 240;
+
+const DESK_Y_SECTION_A = 130;
+const DESK_Y_SECTION_B = 320;
+const DESK_Y_SECTION_C = 520;
+
 export const DESK_CONFIGS: DeskConfig[] = [
   // Section A: 상단 3개 (facing up, 벽 밀착) - 책상 간격 0px (밀착)
-  { id: "reader", position: [60, 130], agentType: "reader", label: "Reader", facing: "up" },
-  { id: "searcher", position: [150, 130], agentType: "searcher", label: "Searcher", facing: "up" },
-  { id: "writer", position: [240, 130], agentType: "writer", label: "Writer", facing: "up" },
+  { id: "reader", position: [DESK_X_LEFT, DESK_Y_SECTION_A], agentType: "reader", label: "Reader", facing: "up" },
+  { id: "searcher", position: [DESK_X_MIDDLE, DESK_Y_SECTION_A], agentType: "searcher", label: "Searcher", facing: "up" },
+  { id: "writer", position: [DESK_X_RIGHT, DESK_Y_SECTION_A], agentType: "writer", label: "Writer", facing: "up" },
 
   // Section B: 중단 3개 (facing down) - 책상 간격 0px (밀착)
-  { id: "editor", position: [60, 320], agentType: "editor", label: "Editor", facing: "down" },
-  { id: "runner", position: [150, 320], agentType: "runner", label: "Runner", facing: "down" },
-  { id: "tester", position: [240, 320], agentType: "tester", label: "Tester", facing: "down" },
+  { id: "editor", position: [DESK_X_LEFT, DESK_Y_SECTION_B], agentType: "editor", label: "Editor", facing: "down" },
+  { id: "runner", position: [DESK_X_MIDDLE, DESK_Y_SECTION_B], agentType: "runner", label: "Runner", facing: "down" },
+  { id: "tester", position: [DESK_X_RIGHT, DESK_Y_SECTION_B], agentType: "tester", label: "Tester", facing: "down" },
 
   // Section C: 하단 2개 (facing up) - 책상 간격 0px (밀착)
-  { id: "planner", position: [60, 520], agentType: "planner", label: "Planner", facing: "up" },
-  { id: "support", position: [150, 520], agentType: "support", label: "Support", facing: "up" },
+  { id: "planner", position: [DESK_X_LEFT, DESK_Y_SECTION_C], agentType: "planner", label: "Planner", facing: "up" },
+  { id: "support", position: [DESK_X_MIDDLE, DESK_Y_SECTION_C], agentType: "support", label: "Support", facing: "up" },
 ];
 
 export const AGENT_COLORS: Record<AgentType, number> = {
