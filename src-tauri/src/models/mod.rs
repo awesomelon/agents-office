@@ -1,22 +1,30 @@
 use serde::{Deserialize, Serialize};
 
-/// Type of agent in the office
+/// Type of agent in the office (workflow-based)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentType {
-    Reader,
-    Searcher,
-    Writer,
-    Editor,
-    Runner,
-    Tester,
-    Planner,
-    Support,
+    /// File exploration (Read, Glob)
+    Explorer,
+    /// Content analysis (Grep, WebSearch)
+    Analyzer,
+    /// Planning and task management (TodoWrite, Task)
+    Architect,
+    /// Code writing (Write, Edit, NotebookEdit)
+    Developer,
+    /// Command execution (Bash general)
+    Operator,
+    /// Testing and validation (Bash test/git)
+    Validator,
+    /// External integrations (WebFetch, MCP tools, Skill)
+    Connector,
+    /// User communication (AskUserQuestion, Error)
+    Liaison,
 }
 
 impl Default for AgentType {
     fn default() -> Self {
-        Self::Editor
+        Self::Developer
     }
 }
 

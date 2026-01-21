@@ -7,7 +7,7 @@
  * @see CLAUDE.md Agent-Tool Mapping section for detailed documentation
  */
 import type { EffectKind } from "../store";
-import { TOOL_COLORS } from "../types";
+import { TOOL_COLORS } from "./colorScheme";
 
 // =============================================================================
 // Types
@@ -23,45 +23,45 @@ export interface ToolConfig {
 // =============================================================================
 
 /**
- * Tool-to-agent mapping with associated visual effects.
+ * Tool-to-agent mapping with associated visual effects (workflow-based).
  *
  * Mapping logic (must match Rust's determine_agent_type):
- * - Read → Reader (파란색)
- * - Glob/Grep/WebSearch/WebFetch → Searcher (하늘색)
- * - Write → Writer (초록색)
- * - Edit/NotebookEdit → Editor (진초록)
- * - Bash (일반) → Runner (노란색)
- * - Bash (git/test/npm/pnpm/yarn/cargo) → Tester (주황색) - handled specially
- * - TodoWrite/Task → Planner (분홍색)
- * - AskUserQuestion/Error → Support (보라색)
+ * - Read/Glob → Explorer (파란색) - 파일 탐색
+ * - Grep/WebSearch → Analyzer (cyan) - 내용 분석
+ * - TodoWrite/Task → Architect (분홍색) - 계획 수립
+ * - Write/Edit/NotebookEdit → Developer (초록색) - 코드 작성
+ * - Bash (일반) → Operator (노란색) - 명령 실행
+ * - Bash (test/git/jest/vitest/pytest) → Validator (주황색) - 테스트/검증
+ * - WebFetch/MCP/Skill → Connector (보라색) - 외부 연동
+ * - AskUserQuestion/Error → Liaison (핑크) - 사용자 소통
  */
 export const TOOL_CONFIG: Record<string, ToolConfig> = {
-  // Reader tools
-  read: { agentId: "reader", effect: { kind: "typeParticles", color: TOOL_COLORS.read } },
+  // Explorer tools - 파일 탐색
+  read: { agentId: "explorer", effect: { kind: "searchPulse", color: TOOL_COLORS.explore } },
+  glob: { agentId: "explorer", effect: { kind: "searchPulse", color: TOOL_COLORS.explore } },
 
-  // Searcher tools
-  glob: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
-  grep: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
-  websearch: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
-  webfetch: { agentId: "searcher", effect: { kind: "searchPulse", color: TOOL_COLORS.search } },
+  // Analyzer tools - 내용 분석
+  grep: { agentId: "analyzer", effect: { kind: "searchPulse", color: TOOL_COLORS.analyze } },
+  websearch: { agentId: "analyzer", effect: { kind: "searchPulse", color: TOOL_COLORS.analyze } },
 
-  // Writer tools
-  write: { agentId: "writer", effect: { kind: "typeParticles", color: TOOL_COLORS.write } },
+  // Architect tools - 계획 수립
+  todowrite: { agentId: "architect", effect: { kind: "typeParticles", color: TOOL_COLORS.architect } },
+  task: { agentId: "architect", effect: { kind: "typeParticles", color: TOOL_COLORS.architect } },
 
-  // Editor tools
-  edit: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
-  notebookedit: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
-  editnotebook: { agentId: "editor", effect: { kind: "typeParticles", color: TOOL_COLORS.edit } },
+  // Developer tools - 코드 작성
+  write: { agentId: "developer", effect: { kind: "typeParticles", color: TOOL_COLORS.develop } },
+  edit: { agentId: "developer", effect: { kind: "typeParticles", color: TOOL_COLORS.develop } },
+  notebookedit: { agentId: "developer", effect: { kind: "typeParticles", color: TOOL_COLORS.develop } },
 
-  // Planner tools
-  todowrite: { agentId: "planner", effect: { kind: "typeParticles", color: TOOL_COLORS.plan } },
-  task: { agentId: "planner", effect: { kind: "typeParticles", color: TOOL_COLORS.plan } },
+  // Operator tools - 명령 실행 (Bash without validator keywords)
+  bash: { agentId: "operator", effect: { kind: "runSpark", color: TOOL_COLORS.operate } },
 
-  // Support tools
-  askuserquestion: { agentId: "support", effect: { kind: "typeParticles", color: TOOL_COLORS.support } },
+  // Connector tools - 외부 연동
+  webfetch: { agentId: "connector", effect: { kind: "searchPulse", color: TOOL_COLORS.connect } },
+  skill: { agentId: "connector", effect: { kind: "typeParticles", color: TOOL_COLORS.connect } },
 
-  // Runner tools (Bash without tester keywords)
-  bash: { agentId: "runner", effect: { kind: "runSpark", color: TOOL_COLORS.run } },
+  // Liaison tools - 사용자 소통
+  askuserquestion: { agentId: "liaison", effect: { kind: "typeParticles", color: TOOL_COLORS.liaison } },
 } as const;
 
 /** Default effect for unknown tools */
@@ -70,8 +70,8 @@ export const DEFAULT_EFFECT: { kind: EffectKind; color: number } = {
   color: TOOL_COLORS.other,
 };
 
-/** Keywords that change Bash from Runner to Tester */
-export const TESTER_KEYWORDS = ["git", "test", "npm", "pnpm", "yarn", "cargo"] as const;
+/** Keywords that change Bash from Operator to Validator */
+export const VALIDATOR_KEYWORDS = ["test", "git", "jest", "vitest", "pytest"] as const;
 
 // =============================================================================
 // Utility Functions
@@ -98,22 +98,27 @@ export function getEffectForTool(toolName: string | null | undefined): { kind: E
 
 /**
  * Infer agent ID from tool name and content.
- * Handles special cases like Bash (Runner vs Tester).
+ * Handles special cases like Bash (Operator vs Validator) and MCP tools.
  */
 export function inferAgentIdFromTool(toolName: string | null | undefined, content: string): string | null {
   const tool = toolName?.trim()?.toLowerCase();
   if (!tool) return null;
 
-  // Bash: context-dependent (Runner vs Tester)
+  // Bash: context-dependent (Operator vs Validator)
   if (tool === "bash") {
     const lowerContent = content.toLowerCase();
-    const isTesterCommand = TESTER_KEYWORDS.some((keyword) => lowerContent.includes(keyword));
-    return isTesterCommand ? "tester" : "runner";
+    const isValidatorCommand = VALIDATOR_KEYWORDS.some((keyword) => lowerContent.includes(keyword));
+    return isValidatorCommand ? "validator" : "operator";
+  }
+
+  // MCP tools: route to Connector
+  if (tool.startsWith("mcp__")) {
+    return "connector";
   }
 
   // Use standard config lookup
   const config = TOOL_CONFIG[tool];
-  return config?.agentId ?? "editor"; // Default to editor for unknown tools
+  return config?.agentId ?? "developer"; // Default to developer for unknown tools
 }
 
 // =============================================================================

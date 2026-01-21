@@ -289,34 +289,34 @@ fn summarize_current_task(entry: &LogEntry) -> String {
 fn agent_id_for_type(agent_type: crate::models::AgentType) -> &'static str {
     use crate::models::AgentType;
     match agent_type {
-        AgentType::Reader => "reader",
-        AgentType::Searcher => "searcher",
-        AgentType::Writer => "writer",
-        AgentType::Editor => "editor",
-        AgentType::Runner => "runner",
-        AgentType::Tester => "tester",
-        AgentType::Planner => "planner",
-        AgentType::Support => "support",
+        AgentType::Explorer => "explorer",
+        AgentType::Analyzer => "analyzer",
+        AgentType::Architect => "architect",
+        AgentType::Developer => "developer",
+        AgentType::Operator => "operator",
+        AgentType::Validator => "validator",
+        AgentType::Connector => "connector",
+        AgentType::Liaison => "liaison",
     }
 }
 
-/// Desk positions matching TypeScript DESK_CONFIGS.
+/// Desk positions matching TypeScript DESK_CONFIGS (workflow-based).
 /// Note: These values are currently unused by frontend (which uses its own DESK_CONFIGS),
 /// but kept for API consistency.
 fn get_desk_position(agent_type: crate::models::AgentType) -> (f32, f32) {
     use crate::models::AgentType;
-    // Layout: 3-3-2 vertical arrangement
-    // Section A (Y=130): Reader, Searcher, Writer
-    // Section B (Y=320): Editor, Runner, Tester
-    // Section C (Y=520): Planner, Support
+    // Layout: 3-3-2 vertical arrangement (workflow-based)
+    // Section A (Y=130): Explorer, Analyzer, Architect
+    // Section B (Y=320): Developer, Operator, Validator
+    // Section C (Y=520): Connector, Liaison
     match agent_type {
-        AgentType::Reader => (60.0, 130.0),
-        AgentType::Searcher => (150.0, 130.0),
-        AgentType::Writer => (240.0, 130.0),
-        AgentType::Editor => (60.0, 320.0),
-        AgentType::Runner => (150.0, 320.0),
-        AgentType::Tester => (240.0, 320.0),
-        AgentType::Planner => (60.0, 520.0),
-        AgentType::Support => (150.0, 520.0),
+        AgentType::Explorer => (60.0, 130.0),
+        AgentType::Analyzer => (150.0, 130.0),
+        AgentType::Architect => (240.0, 130.0),
+        AgentType::Developer => (60.0, 320.0),
+        AgentType::Operator => (150.0, 320.0),
+        AgentType::Validator => (240.0, 320.0),
+        AgentType::Connector => (60.0, 520.0),
+        AgentType::Liaison => (150.0, 520.0),
     }
 }

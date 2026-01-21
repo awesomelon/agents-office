@@ -4,23 +4,10 @@
  */
 import type { Graphics } from "pixi.js";
 import type { AgentMood } from "../types";
-import type { AgentType } from "../../../../types";
+import { HAIR_COLORS } from "../../../../config/colorScheme";
 
-// =============================================================================
-// Constants
-// =============================================================================
-
-/** Hair colors by agent type */
-export const HAIR_COLORS: Record<AgentType, number> = {
-  reader: 0x4a3728, // Brown
-  searcher: 0x2a4a6a, // Dark blue
-  writer: 0x2a5a2a, // Dark green
-  editor: 0x2a2a3a, // Dark
-  runner: 0x8b6914, // Blonde
-  tester: 0x8b4514, // Auburn
-  planner: 0x8b2252, // Reddish
-  support: 0x5a2a6a, // Purple
-};
+// Re-export for backward compatibility
+export { HAIR_COLORS };
 
 // Agent body part pixel coordinates
 const BODY = {
@@ -86,6 +73,16 @@ export function drawAgentShadow(g: Graphics): void {
   g.endFill();
 }
 
+function computeLegOffset(isWalking: boolean, isAnimating: boolean, frame: number): number {
+  if (isWalking) {
+    return Math.sin(frame * Math.PI) * 4;
+  }
+  if (isAnimating) {
+    return Math.sin(frame * Math.PI) * 2;
+  }
+  return 0;
+}
+
 export function drawAgentLegs(
   g: Graphics,
   bounce: number,
@@ -93,12 +90,7 @@ export function drawAgentLegs(
   frame: number,
   isWalking = false
 ): void {
-  // Walking uses larger leg movement
-  const legOffset = isWalking
-    ? Math.sin(frame * Math.PI) * 4
-    : isAnimating
-      ? Math.sin(frame * Math.PI) * 2
-      : 0;
+  const legOffset = computeLegOffset(isWalking, isAnimating, frame);
 
   // Legs
   g.beginFill(0x3a3a5a);
@@ -113,6 +105,16 @@ export function drawAgentLegs(
   g.endFill();
 }
 
+function computeArmSwing(isWalking: boolean, isAnimating: boolean, frame: number): number {
+  if (isWalking) {
+    return Math.sin(frame * Math.PI) * 5;
+  }
+  if (isAnimating) {
+    return Math.sin(frame * Math.PI) * 3;
+  }
+  return 0;
+}
+
 export function drawAgentBody(
   g: Graphics,
   bounce: number,
@@ -121,12 +123,7 @@ export function drawAgentBody(
   frame: number,
   isWalking = false
 ): void {
-  // Walking uses larger arm swing
-  const armSwing = isWalking
-    ? Math.sin(frame * Math.PI) * 5
-    : isAnimating
-      ? Math.sin(frame * Math.PI) * 3
-      : 0;
+  const armSwing = computeArmSwing(isWalking, isAnimating, frame);
 
   // Torso
   g.beginFill(color);

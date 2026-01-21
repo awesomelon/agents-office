@@ -1,4 +1,4 @@
-export type AgentType = "reader" | "searcher" | "writer" | "editor" | "runner" | "tester" | "planner" | "support";
+export type AgentType = "explorer" | "analyzer" | "architect" | "developer" | "operator" | "validator" | "connector" | "liaison";
 
 export type AgentStatus = "idle" | "working" | "thinking" | "passing" | "error";
 
@@ -53,39 +53,20 @@ const DESK_Y_SECTION_B = 320;
 const DESK_Y_SECTION_C = 520;
 
 export const DESK_CONFIGS: DeskConfig[] = [
-  // Section A: 상단 3개 (facing up, 벽 밀착) - 책상 간격 0px (밀착)
-  { id: "reader", position: [DESK_X_LEFT, DESK_Y_SECTION_A], agentType: "reader", label: "Reader", facing: "up" },
-  { id: "searcher", position: [DESK_X_MIDDLE, DESK_Y_SECTION_A], agentType: "searcher", label: "Searcher", facing: "up" },
-  { id: "writer", position: [DESK_X_RIGHT, DESK_Y_SECTION_A], agentType: "writer", label: "Writer", facing: "up" },
+  // Section A: 상단 3개 (facing up) - 탐색/분석/설계
+  { id: "explorer", position: [DESK_X_LEFT, DESK_Y_SECTION_A], agentType: "explorer", label: "Explorer", facing: "up" },
+  { id: "analyzer", position: [DESK_X_MIDDLE, DESK_Y_SECTION_A], agentType: "analyzer", label: "Analyzer", facing: "up" },
+  { id: "architect", position: [DESK_X_RIGHT, DESK_Y_SECTION_A], agentType: "architect", label: "Architect", facing: "up" },
 
-  // Section B: 중단 3개 (facing down) - 책상 간격 0px (밀착)
-  { id: "editor", position: [DESK_X_LEFT, DESK_Y_SECTION_B], agentType: "editor", label: "Editor", facing: "down" },
-  { id: "runner", position: [DESK_X_MIDDLE, DESK_Y_SECTION_B], agentType: "runner", label: "Runner", facing: "down" },
-  { id: "tester", position: [DESK_X_RIGHT, DESK_Y_SECTION_B], agentType: "tester", label: "Tester", facing: "down" },
+  // Section B: 중단 3개 (facing down) - 구현/실행/검증
+  { id: "developer", position: [DESK_X_LEFT, DESK_Y_SECTION_B], agentType: "developer", label: "Developer", facing: "down" },
+  { id: "operator", position: [DESK_X_MIDDLE, DESK_Y_SECTION_B], agentType: "operator", label: "Operator", facing: "down" },
+  { id: "validator", position: [DESK_X_RIGHT, DESK_Y_SECTION_B], agentType: "validator", label: "Validator", facing: "down" },
 
-  // Section C: 하단 2개 (facing up) - 책상 간격 0px (밀착)
-  { id: "planner", position: [DESK_X_LEFT, DESK_Y_SECTION_C], agentType: "planner", label: "Planner", facing: "up" },
-  { id: "support", position: [DESK_X_MIDDLE, DESK_Y_SECTION_C], agentType: "support", label: "Support", facing: "up" },
+  // Section C: 하단 2개 (facing up) - 통합/소통
+  { id: "connector", position: [DESK_X_LEFT, DESK_Y_SECTION_C], agentType: "connector", label: "Connector", facing: "up" },
+  { id: "liaison", position: [DESK_X_MIDDLE, DESK_Y_SECTION_C], agentType: "liaison", label: "Liaison", facing: "up" },
 ];
-
-export const AGENT_COLORS: Record<AgentType, number> = {
-  reader: 0x60a5fa, // blue
-  searcher: 0x38bdf8, // sky blue
-  writer: 0x4ade80, // green
-  editor: 0x22c55e, // dark green
-  runner: 0xfbbf24, // yellow
-  tester: 0xf97316, // orange
-  planner: 0xf472b6, // pink
-  support: 0xa78bfa, // purple
-};
-
-export const STATUS_COLORS: Record<AgentStatus, number> = {
-  idle: 0x6b7280,
-  working: 0x22c55e,
-  thinking: 0x3b82f6,
-  passing: 0xa855f7,
-  error: 0xef4444,
-};
 
 export interface TimelineEvent {
   id: string;
@@ -97,25 +78,10 @@ export interface TimelineEvent {
   relativeTime: string;
 }
 
-export const TIMELINE_COLORS: Record<LogEntryType, string> = {
-  tool_call: "#3b82f6",    // blue
-  tool_result: "#22c55e",  // green
-  error: "#ef4444",        // red
-  todo_update: "#a855f7",  // purple
-  message: "#6b7280",      // gray
-  session_start: "#facc15", // yellow
-  session_end: "#facc15",   // yellow
-};
-
-// Tool-specific colors for visual effects and stamps
-export const TOOL_COLORS = {
-  read: 0x3b82f6,      // blue
-  search: 0x38bdf8,    // sky blue
-  write: 0x22c55e,     // green
-  edit: 0x16a34a,      // dark green
-  run: 0xf59e0b,       // amber
-  plan: 0xec4899,      // pink
-  support: 0xa78bfa,   // purple
-  other: 0x6b7280,     // gray
-  error: 0xef4444,     // red
-} as const;
+// Re-export colors from centralized colorScheme for backward compatibility
+export {
+  AGENT_COLORS,
+  STATUS_COLORS,
+  TIMELINE_COLORS,
+  TOOL_COLORS,
+} from "../config/colorScheme";

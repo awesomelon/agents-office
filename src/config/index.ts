@@ -5,7 +5,7 @@ export {
   // Tool configuration
   TOOL_CONFIG,
   DEFAULT_EFFECT,
-  TESTER_KEYWORDS,
+  VALIDATOR_KEYWORDS,
   getToolConfig,
   getEffectForTool,
   inferAgentIdFromTool,

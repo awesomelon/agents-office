@@ -1,6 +1,6 @@
 # Agents Office
 
-A Tauri desktop app that visualizes Claude Code's workflow as **office agents (Reader/Searcher/Writer/Editor/Runner/Tester/Planner/Support)** working in a pixel art office.
+A Tauri desktop app that visualizes Claude Code's workflow as **office agents (Explorer/Analyzer/Architect/Developer/Operator/Validator/Connector/Liaison)** working in a pixel art office.
 It watches local Claude logs (`$HOME/.claude/**`) and streams events to the frontend (PixiJS canvas + Inbox log panel).
 
 ![Agents Office screenshot](./image.png)
@@ -12,15 +12,15 @@ It watches local Claude logs (`$HOME/.claude/**`) and streams events to the fron
 
 ## Agent UI Legend (Expressions/Icons)
 
-### Agent Types (Roles) & Colors
-- **Reader**: Reads and summarizes input/file content (color `#60A5FA`)
-- **Searcher**: Performs code/file/web searches (color `#38BDF8`)
-- **Writer**: Creates new files/code (color `#4ADE80`)
-- **Editor**: Modifies existing code (color `#22C55E`)
-- **Runner**: Handles command execution (general Bash, etc.) (color `#FBBF24`)
-- **Tester**: Handles test/build/validation execution (color `#F97316`)
-- **Planner**: Manages todo/planning and task delegation (color `#F472B6`)
-- **Support**: User questions/assistance role (color `#A78BFA`)
+### Agent Types (Workflow-based Roles) & Colors
+- **Explorer**: File exploration with Read/Glob (color `#3B82F6` blue)
+- **Analyzer**: Content analysis with Grep/WebSearch (color `#06B6D4` cyan)
+- **Architect**: Planning and task management with TodoWrite/Task (color `#F472B6` pink)
+- **Developer**: Code writing with Write/Edit/NotebookEdit (color `#22C55E` green)
+- **Operator**: Command execution with general Bash (color `#FBBF24` yellow)
+- **Validator**: Testing and validation with test/git Bash commands (color `#F97316` orange)
+- **Connector**: External integrations with WebFetch/MCP tools/Skill (color `#8B5CF6` purple)
+- **Liaison**: User communication with AskUserQuestion/Error (color `#EC4899` pink)
 
 ### Status (Idle/Working/Thinking/Passing/Error) Display
 - **Status Indicator (dot next to head)**: Color changes based on status

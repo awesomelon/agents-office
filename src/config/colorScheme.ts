@@ -10,28 +10,28 @@ import type { AgentType, AgentStatus, LogEntryType } from "../types";
 // Agent Colors (by type)
 // =============================================================================
 
-/** Primary color for each agent type */
+/** Primary color for each agent type (workflow-based) */
 export const AGENT_COLORS: Record<AgentType, number> = {
-  reader: 0x60a5fa, // blue
-  searcher: 0x38bdf8, // sky blue
-  writer: 0x4ade80, // green
-  editor: 0x22c55e, // dark green
-  runner: 0xfbbf24, // yellow
-  tester: 0xf97316, // orange
-  planner: 0xf472b6, // pink
-  support: 0xa78bfa, // purple
+  explorer: 0x3b82f6, // blue
+  analyzer: 0x06b6d4, // cyan
+  architect: 0xf472b6, // pink
+  developer: 0x22c55e, // green
+  operator: 0xfbbf24, // yellow
+  validator: 0xf97316, // orange
+  connector: 0x8b5cf6, // purple
+  liaison: 0xec4899, // pink
 };
 
-/** Hair colors for pixel-art agent sprites */
+/** Hair colors for pixel-art agent sprites (workflow-based) */
 export const HAIR_COLORS: Record<AgentType, number> = {
-  reader: 0x4a3728, // Brown
-  searcher: 0x2a4a6a, // Dark blue
-  writer: 0x2a5a2a, // Dark green
-  editor: 0x2a2a3a, // Dark
-  runner: 0x8b6914, // Blonde
-  tester: 0x8b4514, // Auburn
-  planner: 0x8b2252, // Reddish
-  support: 0x5a2a6a, // Purple
+  explorer: 0x4a3728, // Brown
+  analyzer: 0x2a4a6a, // Dark blue
+  architect: 0x8b2252, // Reddish
+  developer: 0x2a5a2a, // Dark green
+  operator: 0x8b6914, // Blonde
+  validator: 0x8b4514, // Auburn
+  connector: 0x5a2a6a, // Purple
+  liaison: 0x6a2a5a, // Magenta
 };
 
 // =============================================================================
@@ -61,13 +61,14 @@ export const SCREEN_COLORS: Record<AgentStatus, number> = {
 // =============================================================================
 
 export const TOOL_COLORS = {
-  read: 0x3b82f6, // blue
-  search: 0x38bdf8, // sky blue
-  write: 0x22c55e, // green
-  edit: 0x16a34a, // dark green
-  run: 0xf59e0b, // amber
-  plan: 0xec4899, // pink
-  support: 0xa78bfa, // purple
+  explore: 0x3b82f6, // blue - Explorer
+  analyze: 0x06b6d4, // cyan - Analyzer
+  architect: 0xf472b6, // pink - Architect
+  develop: 0x22c55e, // green - Developer
+  operate: 0xfbbf24, // yellow - Operator
+  validate: 0xf97316, // orange - Validator
+  connect: 0x8b5cf6, // purple - Connector
+  liaison: 0xec4899, // pink - Liaison
   other: 0x6b7280, // gray
   error: 0xef4444, // red
 } as const;

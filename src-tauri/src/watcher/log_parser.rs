@@ -75,52 +75,74 @@ pub fn parse_session_line(line: &str) -> Option<LogEntry> {
 }
 
 /// Determine which agent type should handle this log entry
+///
+/// Workflow-based mapping:
+/// - Explorer: File exploration (Read, Glob)
+/// - Analyzer: Content analysis (Grep, WebSearch)
+/// - Architect: Planning (TodoWrite, Task)
+/// - Developer: Code writing (Write, Edit, NotebookEdit)
+/// - Operator: Command execution (Bash general)
+/// - Validator: Testing (Bash test/git/jest/vitest/pytest)
+/// - Connector: External integrations (WebFetch, mcp__*, Skill)
+/// - Liaison: User communication (AskUserQuestion, Error)
 pub fn determine_agent_type(entry: &LogEntry) -> AgentType {
     if let Some(ref tool) = entry.tool_name {
-        // Avoid allocating `to_lowercase()` for common tool names.
-        if tool.eq_ignore_ascii_case("read") {
-            return AgentType::Reader;
+        let tool_lower = tool.to_ascii_lowercase();
+
+        // Explorer: File exploration
+        if tool_lower == "read" || tool_lower == "glob" {
+            return AgentType::Explorer;
         }
-        if tool.eq_ignore_ascii_case("glob")
-            || tool.eq_ignore_ascii_case("grep")
-            || tool.eq_ignore_ascii_case("websearch")
-            || tool.eq_ignore_ascii_case("webfetch")
-        {
-            return AgentType::Searcher;
+
+        // Analyzer: Content analysis
+        if tool_lower == "grep" || tool_lower == "websearch" {
+            return AgentType::Analyzer;
         }
-        if tool.eq_ignore_ascii_case("write") {
-            return AgentType::Writer;
+
+        // Architect: Planning and task management
+        if tool_lower == "todowrite" || tool_lower == "task" {
+            return AgentType::Architect;
         }
-        if tool.eq_ignore_ascii_case("edit") || tool.eq_ignore_ascii_case("notebookedit") {
-            return AgentType::Editor;
+
+        // Developer: Code writing
+        if tool_lower == "write" || tool_lower == "edit" || tool_lower == "notebookedit" {
+            return AgentType::Developer;
         }
-        if tool.eq_ignore_ascii_case("bash") {
-            // Bash: context-dependent (Runner vs Tester)
-            // We keep a single lowercase allocation only for this branch.
+
+        // Bash: context-dependent (Operator vs Validator)
+        if tool_lower == "bash" {
             let content = entry.content.to_ascii_lowercase();
-            // Tester: git, test, npm, pnpm, yarn, cargo commands
-            if content.contains("git")
-                || content.contains("test")
-                || content.contains("npm")
-                || content.contains("pnpm")
-                || content.contains("yarn")
-                || content.contains("cargo")
+            // Validator: test, git, jest, vitest, pytest commands
+            if content.contains("test")
+                || content.contains("git")
+                || content.contains("jest")
+                || content.contains("vitest")
+                || content.contains("pytest")
             {
-                return AgentType::Tester;
+                return AgentType::Validator;
             }
-            return AgentType::Runner;
+            return AgentType::Operator;
         }
-        if tool.eq_ignore_ascii_case("todowrite") || tool.eq_ignore_ascii_case("task") {
-            return AgentType::Planner;
+
+        // Connector: External integrations (WebFetch, MCP tools, Skill)
+        if tool_lower == "webfetch"
+            || tool_lower == "skill"
+            || tool_lower.starts_with("mcp__")
+        {
+            return AgentType::Connector;
         }
-        if tool.eq_ignore_ascii_case("askuserquestion") {
-            return AgentType::Support;
+
+        // Liaison: User communication
+        if tool_lower == "askuserquestion" {
+            return AgentType::Liaison;
         }
-        AgentType::Editor
+
+        // Default to Developer for unknown tools
+        AgentType::Developer
     } else if entry.entry_type == LogEntryType::Error {
-        AgentType::Support
+        AgentType::Liaison
     } else {
-        AgentType::Editor
+        AgentType::Developer
     }
 }
 
@@ -203,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_agent_type_searcher() {
+    fn test_determine_agent_type_analyzer() {
         let entry = LogEntry {
             timestamp: String::new(),
             entry_type: LogEntryType::ToolCall,
@@ -211,6 +233,30 @@ mod tests {
             agent_id: None,
             tool_name: Some("Grep".to_string()),
         };
-        assert_eq!(determine_agent_type(&entry), AgentType::Searcher);
+        assert_eq!(determine_agent_type(&entry), AgentType::Analyzer);
+    }
+
+    #[test]
+    fn test_determine_agent_type_explorer() {
+        let entry = LogEntry {
+            timestamp: String::new(),
+            entry_type: LogEntryType::ToolCall,
+            content: String::new(),
+            agent_id: None,
+            tool_name: Some("Read".to_string()),
+        };
+        assert_eq!(determine_agent_type(&entry), AgentType::Explorer);
+    }
+
+    #[test]
+    fn test_determine_agent_type_connector() {
+        let entry = LogEntry {
+            timestamp: String::new(),
+            entry_type: LogEntryType::ToolCall,
+            content: String::new(),
+            agent_id: None,
+            tool_name: Some("mcp__chrome-devtools__click".to_string()),
+        };
+        assert_eq!(determine_agent_type(&entry), AgentType::Connector);
     }
 }

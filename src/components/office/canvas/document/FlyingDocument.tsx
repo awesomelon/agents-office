@@ -7,7 +7,7 @@ import { DOCUMENT_ARC_HEIGHT, DOCUMENT_SIZE, DOCUMENT_TRANSFER_DURATION_MS } fro
 import { clamp01, easeOutCubic, lerp } from "../math";
 import { getAgentPosition } from "../layout";
 
-type ToolKind = "read" | "search" | "write" | "edit" | "run" | "plan" | "other";
+type ToolKind = "explore" | "analyze" | "architect" | "develop" | "operate" | "validate" | "connect" | "liaison" | "other";
 
 interface ToolStamp {
   label: string;
@@ -17,19 +17,37 @@ interface ToolStamp {
 
 const DEFAULT_STAMP: ToolStamp = { label: "???", color: TOOL_COLORS.other, kind: "other" };
 
+/**
+ * Tool stamps for flying documents (workflow-based).
+ * Maps tool names to visual stamps shown during document transfer.
+ */
 const TOOL_STAMPS: Record<string, ToolStamp> = {
-  read: { label: "READ", color: TOOL_COLORS.read, kind: "read" },
-  glob: { label: "SRCH", color: TOOL_COLORS.search, kind: "search" },
-  grep: { label: "SRCH", color: TOOL_COLORS.search, kind: "search" },
-  websearch: { label: "SRCH", color: TOOL_COLORS.search, kind: "search" },
-  webfetch: { label: "SRCH", color: TOOL_COLORS.search, kind: "search" },
-  write: { label: "WRIT", color: TOOL_COLORS.write, kind: "write" },
-  edit: { label: "EDIT", color: TOOL_COLORS.edit, kind: "edit" },
-  notebookedit: { label: "EDIT", color: TOOL_COLORS.edit, kind: "edit" },
-  editnotebook: { label: "EDIT", color: TOOL_COLORS.edit, kind: "edit" },
-  bash: { label: "BASH", color: TOOL_COLORS.run, kind: "run" },
-  todowrite: { label: "PLAN", color: TOOL_COLORS.plan, kind: "plan" },
-  task: { label: "PLAN", color: TOOL_COLORS.plan, kind: "plan" },
+  // Explorer tools - 파일 탐색
+  read: { label: "EXPL", color: TOOL_COLORS.explore, kind: "explore" },
+  glob: { label: "EXPL", color: TOOL_COLORS.explore, kind: "explore" },
+
+  // Analyzer tools - 내용 분석
+  grep: { label: "ANLZ", color: TOOL_COLORS.analyze, kind: "analyze" },
+  websearch: { label: "ANLZ", color: TOOL_COLORS.analyze, kind: "analyze" },
+
+  // Architect tools - 계획 수립
+  todowrite: { label: "ARCH", color: TOOL_COLORS.architect, kind: "architect" },
+  task: { label: "ARCH", color: TOOL_COLORS.architect, kind: "architect" },
+
+  // Developer tools - 코드 작성
+  write: { label: "DEV", color: TOOL_COLORS.develop, kind: "develop" },
+  edit: { label: "DEV", color: TOOL_COLORS.develop, kind: "develop" },
+  notebookedit: { label: "DEV", color: TOOL_COLORS.develop, kind: "develop" },
+
+  // Operator tools - 명령 실행
+  bash: { label: "OPER", color: TOOL_COLORS.operate, kind: "operate" },
+
+  // Connector tools - 외부 연동
+  webfetch: { label: "CONN", color: TOOL_COLORS.connect, kind: "connect" },
+  skill: { label: "CONN", color: TOOL_COLORS.connect, kind: "connect" },
+
+  // Liaison tools - 사용자 소통
+  askuserquestion: { label: "LIAS", color: TOOL_COLORS.liaison, kind: "liaison" },
 };
 
 function getToolStamp(toolName: string | null | undefined): ToolStamp {
@@ -42,33 +60,27 @@ function getToolStamp(toolName: string | null | undefined): ToolStamp {
   return { label: tool.slice(0, 4).toUpperCase(), color: 0x6b7280, kind: "other" };
 }
 
-// Pixel art icon rendering for each tool kind
+// Pixel art icon rendering for each tool kind (workflow-based)
 function drawToolIcon(g: any, kind: ToolKind, color: number, cx: number, cy: number): void {
   const P = 2; // pixel size
   g.beginFill(color, 0.95);
 
   switch (kind) {
-    case "read":
-      // Open book icon (8x6 pixels)
-      // Left page
-      g.drawRect(cx - 4 * P, cy - 2 * P, 3 * P, 4 * P);
-      // Right page
-      g.drawRect(cx + 1 * P, cy - 2 * P, 3 * P, 4 * P);
-      // Spine
-      g.drawRect(cx - P, cy - 2 * P, 2 * P, 4 * P);
+    case "explore":
+      // Compass/folder icon for exploration (8x6 pixels)
+      // Folder body
+      g.drawRect(cx - 4 * P, cy - P, 8 * P, 4 * P);
+      g.drawRect(cx - 4 * P, cy - 2 * P, 3 * P, P);
       g.endFill();
-      // Page lines
-      g.beginFill(0xffffff, 0.6);
-      g.drawRect(cx - 3 * P, cy - P, 2 * P, P);
-      g.drawRect(cx - 3 * P, cy + P, P, P);
-      g.drawRect(cx + 2 * P, cy - P, 2 * P, P);
-      g.drawRect(cx + 2 * P, cy + P, P, P);
+      // Folder tab
+      g.beginFill(0xffffff, 0.4);
+      g.drawRect(cx - 3 * P, cy, 2 * P, P);
+      g.drawRect(cx + P, cy, 2 * P, P);
       g.endFill();
       break;
 
-    case "search":
+    case "analyze":
       // Magnifying glass icon (7x7 pixels)
-      // Glass circle (hollow)
       g.drawRect(cx - 2 * P, cy - 3 * P, 4 * P, P);
       g.drawRect(cx - 3 * P, cy - 2 * P, P, 3 * P);
       g.drawRect(cx + 2 * P, cy - 2 * P, P, 3 * P);
@@ -83,45 +95,37 @@ function drawToolIcon(g: any, kind: ToolKind, color: number, cx: number, cy: num
       g.endFill();
       break;
 
-    case "write":
-      // Pencil icon (6x8 pixels)
-      // Pencil body (diagonal)
-      g.drawRect(cx - 2 * P, cy - 3 * P, 2 * P, P);
-      g.drawRect(cx - P, cy - 2 * P, 2 * P, P);
-      g.drawRect(cx, cy - P, 2 * P, P);
-      g.drawRect(cx + P, cy, 2 * P, P);
-      g.drawRect(cx + 2 * P, cy + P, P, P);
+    case "architect":
+      // Blueprint/plan icon (6x7 pixels)
+      g.drawRect(cx - 2 * P, cy - 3 * P, 5 * P, 6 * P);
       g.endFill();
-      // Tip
-      g.beginFill(0xfbbf24, 0.9);
-      g.drawRect(cx + 3 * P, cy + 2 * P, P, P);
-      g.endFill();
-      // Eraser
-      g.beginFill(0xfda4af, 0.9);
-      g.drawRect(cx - 3 * P, cy - 3 * P, P, P);
+      // Grid lines
+      g.beginFill(0xffffff, 0.6);
+      g.drawRect(cx - P, cy - 2 * P, P, 4 * P);
+      g.drawRect(cx + P, cy - 2 * P, P, 4 * P);
+      g.drawRect(cx - P, cy - P, 3 * P, P);
+      g.drawRect(cx - P, cy + P, 3 * P, P);
       g.endFill();
       break;
 
-    case "edit":
-      // Document with pencil icon (7x7 pixels)
-      // Document
-      g.drawRect(cx - 3 * P, cy - 3 * P, 4 * P, 6 * P);
-      g.endFill();
-      // Pencil overlay
-      g.beginFill(0xfbbf24, 0.9);
-      g.drawRect(cx + P, cy - P, P, P);
-      g.drawRect(cx + 2 * P, cy, P, P);
-      g.drawRect(cx + 3 * P, cy + P, P, P);
-      g.endFill();
-      // Doc lines
-      g.beginFill(0xffffff, 0.5);
-      g.drawRect(cx - 2 * P, cy - 2 * P, 2 * P, P);
-      g.drawRect(cx - 2 * P, cy, 2 * P, P);
+    case "develop":
+      // Code brackets icon (7x7 pixels)
+      // Left bracket <
+      g.drawRect(cx - 3 * P, cy - P, P, 2 * P);
+      g.drawRect(cx - 2 * P, cy - 2 * P, P, P);
+      g.drawRect(cx - 2 * P, cy + P, P, P);
+      // Right bracket >
+      g.drawRect(cx + 2 * P, cy - P, P, 2 * P);
+      g.drawRect(cx + P, cy - 2 * P, P, P);
+      g.drawRect(cx + P, cy + P, P, P);
+      // Slash /
+      g.drawRect(cx, cy - P, P, P);
+      g.drawRect(cx - P, cy, P, P);
       g.endFill();
       break;
 
-    case "run":
-      // Terminal/gear icon - lightning bolt (6x8 pixels)
+    case "operate":
+      // Terminal/lightning icon (6x8 pixels)
       g.drawRect(cx - P, cy - 3 * P, 3 * P, P);
       g.drawRect(cx - 2 * P, cy - 2 * P, 3 * P, P);
       g.drawRect(cx - P, cy - P, 3 * P, P);
@@ -131,22 +135,53 @@ function drawToolIcon(g: any, kind: ToolKind, color: number, cx: number, cy: num
       g.endFill();
       break;
 
-    case "plan":
-      // Checklist icon (6x7 pixels)
-      // Paper
-      g.drawRect(cx - 2 * P, cy - 3 * P, 5 * P, 6 * P);
+    case "validate":
+      // Checkmark/shield icon (6x7 pixels)
+      // Shield outline
+      g.drawRect(cx - 2 * P, cy - 3 * P, 5 * P, P);
+      g.drawRect(cx - 3 * P, cy - 2 * P, P, 3 * P);
+      g.drawRect(cx + 2 * P, cy - 2 * P, P, 3 * P);
+      g.drawRect(cx - 2 * P, cy + P, P, P);
+      g.drawRect(cx + P, cy + P, P, P);
+      g.drawRect(cx - P, cy + 2 * P, 2 * P, P);
       g.endFill();
-      // Checkmarks
+      // Checkmark
+      g.beginFill(0xffffff, 0.8);
+      g.drawRect(cx - P, cy, P, P);
+      g.drawRect(cx, cy - P, P, 2 * P);
+      g.drawRect(cx + P, cy - 2 * P, P, P);
+      g.endFill();
+      break;
+
+    case "connect":
+      // Plug/link icon (7x6 pixels)
+      // Left connector
+      g.drawRect(cx - 3 * P, cy - P, 2 * P, 2 * P);
+      g.drawRect(cx - 4 * P, cy - 2 * P, P, P);
+      g.drawRect(cx - 4 * P, cy + P, P, P);
+      // Right connector
+      g.drawRect(cx + P, cy - P, 2 * P, 2 * P);
+      g.drawRect(cx + 3 * P, cy - 2 * P, P, P);
+      g.drawRect(cx + 3 * P, cy + P, P, P);
+      // Connection line
+      g.drawRect(cx - P, cy, 2 * P, P);
+      g.endFill();
+      break;
+
+    case "liaison":
+      // Speech bubble icon (7x6 pixels)
+      // Bubble body
+      g.drawRect(cx - 3 * P, cy - 2 * P, 6 * P, 3 * P);
+      g.drawRect(cx - 2 * P, cy - 3 * P, 4 * P, P);
+      // Tail
+      g.drawRect(cx - 2 * P, cy + P, 2 * P, P);
+      g.drawRect(cx - 3 * P, cy + 2 * P, P, P);
+      g.endFill();
+      // Dots
       g.beginFill(0xffffff, 0.7);
-      g.drawRect(cx - P, cy - 2 * P, P, P);
+      g.drawRect(cx - 2 * P, cy - P, P, P);
       g.drawRect(cx, cy - P, P, P);
-      g.drawRect(cx - P, cy + P, P, P);
-      g.drawRect(cx, cy + 2 * P, P, P);
-      g.endFill();
-      // Lines
-      g.beginFill(0x000000, 0.3);
-      g.drawRect(cx + P, cy - 2 * P, 2 * P, P);
-      g.drawRect(cx + P, cy + P, 2 * P, P);
+      g.drawRect(cx + 2 * P, cy - P, P, P);
       g.endFill();
       break;
 

@@ -80,14 +80,14 @@ function getStatusSummaryKo(agentType: AgentType, status: AgentStatus): string {
 
 function getAgentLabelKo(agentType: AgentType): string {
   const label: Record<AgentType, string> = {
-    reader: "리더",
-    searcher: "서처",
-    writer: "라이터",
-    editor: "에디터",
-    runner: "러너",
-    tester: "테스터",
-    planner: "플래너",
-    support: "서포트",
+    explorer: "탐색자",
+    analyzer: "분석가",
+    architect: "설계자",
+    developer: "개발자",
+    operator: "운영자",
+    validator: "검증자",
+    connector: "연결자",
+    liaison: "소통자",
   };
   return label[agentType] ?? "에이전트";
 }

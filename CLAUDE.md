@@ -92,7 +92,7 @@ cd src-tauri && cargo test
 
 ### Type Synchronization (중요)
 Rust와 TypeScript 타입은 수동 동기화 필요:
-- `AgentType`: reader, searcher, writer, editor, runner, tester, planner, support
+- `AgentType`: explorer, analyzer, architect, developer, operator, validator, connector, liaison
 - `AgentStatus`: idle, working, thinking, passing, error
 - `LogEntryType`: tool_call, tool_result, message, error, todo_update, session_start, session_end
 
@@ -109,16 +109,16 @@ function isTauriEnv(): boolean {
 ```
 `useTauriEvents.ts`에서 이 패턴으로 브라우저/Tauri 환경 분기 처리함.
 
-### Agent-Tool Mapping
+### Agent-Tool Mapping (워크플로우 기반)
 `log_parser.rs`의 `determine_agent_type()`:
-- Read → Reader (파란색 0x60a5fa)
-- Glob/Grep/WebSearch/WebFetch → Searcher (하늘색 0x38bdf8)
-- Write → Writer (초록색 0x4ade80)
-- Edit/NotebookEdit → Editor (진초록 0x22c55e)
-- Bash (일반) → Runner (노란색 0xfbbf24)
-- Bash (git/test/npm/pnpm/yarn/cargo) → Tester (주황색 0xf97316)
-- TodoWrite/Task → Planner (분홍색 0xf472b6)
-- AskUserQuestion/Error → Support (보라색 0xa78bfa)
+- Read/Glob → Explorer (파란색 0x3b82f6) - 파일 탐색
+- Grep/WebSearch → Analyzer (cyan 0x06b6d4) - 내용 분석
+- TodoWrite/Task → Architect (분홍색 0xf472b6) - 계획 수립
+- Write/Edit/NotebookEdit → Developer (초록색 0x22c55e) - 코드 작성
+- Bash (일반) → Operator (노란색 0xfbbf24) - 명령 실행
+- Bash (test/git/jest/vitest/pytest) → Validator (주황색 0xf97316) - 테스트/검증
+- WebFetch/mcp__*/Skill → Connector (보라색 0x8b5cf6) - 외부 연동
+- AskUserQuestion/Error → Liaison (핑크 0xec4899) - 사용자 소통
 
 ### Office Layout
 3-3-2 세로 배치 (`DESK_CONFIGS` in types/index.ts, 550×700 캔버스):
@@ -128,14 +128,14 @@ function isTauriEnv(): boolean {
 │  ┌──────────────────────────────────────────┤[Hanger]│ Y=70
 │  │ ENTRANCE (156px)                         │        │ Y=80
 ├═══════════════════════════┤                 │[Locker]│ Y=70 (파티션 1, 300px 너비)
-│ [Reader]  [Searcher]  [Writer]              │        │ Y=130 (facing up)
-│   (60)      (200)      (340)                │        │
+│ [Explorer] [Analyzer] [Architect]           │        │ Y=130 (facing up)
+│   (60)      (150)      (240)                │        │  탐색/분석/설계
 │                                             │  RIGHT │
-│ [Editor]  [Runner]    [Tester]              │  WALL  │ Y=320 (facing down)
-│   (60)      (200)      (340)                │ X=500~ │
+│ [Developer][Operator] [Validator]           │  WALL  │ Y=320 (facing down)
+│   (60)      (150)      (240)                │ X=500~ │  구현/실행/검증
 ├═══════════════════════════┤                 │        │ Y=420 (파티션 2, 300px 너비)
-│ [Planner] [Support]                         │        │ Y=520 (facing up)
-│   (60)      (200)                           │        │
+│ [Connector][Liaison]                        │        │ Y=520 (facing up)
+│   (60)      (150)                           │        │  통합/소통
 ├─────────────────────────────────────────────┴────────┤
 │              (하단 창문 밴드 78px)                     │
 └──────────────────────────────────────────────────────┘ Y=700
@@ -150,7 +150,14 @@ function isTauriEnv(): boolean {
 2. `agentStore.startDocumentTransfer(fromId, toId, toolName)` 호출 (toolName 포함)
 3. `FlyingDocument` 컴포넌트가 600ms 동안 포물선 애니메이션 렌더링:
    - **툴 스탬프**: 서류 위에 툴 종류별 픽셀아트 아이콘 + 라벨 표시
-   - `TOOL_STAMPS` 매핑: read→READ, glob/grep→SRCH, write→WRIT, edit→EDIT, bash→BASH, todowrite/task→PLAN
+   - `TOOL_STAMPS` 매핑 (워크플로우 기반):
+     - read/glob → EXPL (Explorer)
+     - grep/websearch → ANLZ (Analyzer)
+     - todowrite/task → ARCH (Architect)
+     - write/edit → DEV (Developer)
+     - bash → OPER (Operator)
+     - webfetch/skill → CONN (Connector)
+     - askuserquestion → LIAS (Liaison)
    - 스택 깊이에 따른 오프셋/스케일/투명도 조절 (동시 다발 전송 대응)
 4. 완료 시 `clearDocumentTransfer()` 자동 호출
 
@@ -232,9 +239,9 @@ function isTauriEnv(): boolean {
 `EffectsLayer.tsx`가 에이전트 동작에 따른 시각 효과를 렌더링:
 
 **효과 타입** (`VisualEffect.kind`):
-- **searchPulse**: 동심원 펄스 (Searcher 에이전트) - 2개 링이 확장하며 페이드아웃
-- **typeParticles**: 상승 파티클 (Writer/Editor) - 6개 사각형이 위로 떠오름
-- **runSpark**: 스파크 버스트 (Runner) - 8방향 스파크 + 중앙 글로우
+- **searchPulse**: 동심원 펄스 (Explorer/Analyzer/Connector) - 2개 링이 확장하며 페이드아웃
+- **typeParticles**: 상승 파티클 (Architect/Developer/Liaison) - 6개 사각형이 위로 떠오름
+- **runSpark**: 스파크 버스트 (Operator) - 8방향 스파크 + 중앙 글로우
 - **errorBurst**: 폭발 패턴 (에러 발생 시) - 10개 파편 + 플래시
 
 **구현 상세**:
