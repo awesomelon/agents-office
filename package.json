@@ -1,6 +1,6 @@
 {
   "name": "@j-ho/agents-office",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Claude Code visualization as agents working in an office",
   "license": "MIT",
   "author": "j-ho",

@@ -95,10 +95,9 @@ export function AgentSprite({ agent, x, y, alpha, motion, mood }: AgentSpritePro
     if (agent.status === "idle") return "";
     return formatAgentMessage({
       status: agent.status,
-      agentType: agent.agent_type,
       rawTask: agent.current_task,
     });
-  }, [agent.status, agent.agent_type, agent.current_task]);
+  }, [agent.status, agent.current_task]);
 
   const effectiveFrame = isWalking ? walkFrame : frame;
   const bounce = (agent.status !== "idle" || isWalking) ? Math.sin(effectiveFrame * Math.PI / 2) * 3 : 0;
