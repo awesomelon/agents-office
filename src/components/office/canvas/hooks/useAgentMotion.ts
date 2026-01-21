@@ -10,13 +10,37 @@ import {
 } from "../constants";
 import {
   calculateReturnDuration,
-  calculateWalkDuration,
+  calculateBezierWalkDuration,
   computeMotionState,
   findCurrentBand,
   generateWaypointInBand,
+  generateWalkingControlPoint,
   getAgentPosition,
 } from "../layout";
 import type { AgentMotion, MotionPhase } from "../types";
+
+/** Create a walking motion from a starting position. */
+function createWalkingMotion(
+  startPos: { x: number; y: number },
+  startedAt: number
+): AgentMotion {
+  const band = findCurrentBand(startPos.y) ?? WALKABLE_BANDS[1];
+  const waypoint = generateWaypointInBand(band);
+  const controlPoint = generateWalkingControlPoint(startPos, waypoint);
+  return {
+    phase: "walking",
+    startedAt,
+    durationMs: calculateBezierWalkDuration(startPos, waypoint, controlPoint),
+    from: { ...startPos, alpha: 1 },
+    to: { ...waypoint, alpha: 1 },
+    controlPoint,
+  };
+}
+
+/** Get random pause duration between walking waypoints. */
+function getRandomWalkingPause(): number {
+  return WALKING_PAUSE_MIN_MS + Math.random() * (WALKING_PAUSE_MAX_MS - WALKING_PAUSE_MIN_MS);
+}
 
 export function useAgentMotion(args: {
   agents: Record<string, Agent>;
@@ -45,10 +69,10 @@ export function useAgentMotion(args: {
         const isCurrentlyWalking = currentPhase === "walking" || currentPhase === "returning";
 
         if (wantsVisible) {
-          // idle → working 전환
-          if (isCurrentlyWalking) {
-            // walking 중이면 returning으로 전환 (책상으로 복귀)
-            const pos = computeMotionState(current!, ts);
+          // idle -> working transition
+          if (isCurrentlyWalking && current) {
+            // Walking -> returning to desk
+            const pos = computeMotionState(current, ts);
             next[id] = {
               phase: "returning",
               startedAt: ts,
@@ -57,7 +81,7 @@ export function useAgentMotion(args: {
               to: { x: target.x, y: target.y, alpha: 1 },
             };
           } else if (currentPhase === "absent") {
-            // 첫 등장: entering
+            // First appearance: entering from entrance
             next[id] = {
               phase: "entering",
               startedAt: ts,
@@ -66,22 +90,11 @@ export function useAgentMotion(args: {
               to: { x: target.x, y: target.y, alpha: 1 },
             };
           }
-        } else {
-          // working → idle 전환: present면 walking 시작
-          if (currentPhase === "present") {
-            const startPos = { x: target.x, y: target.y };
-            const band = findCurrentBand(startPos.y) ?? WALKABLE_BANDS[1]; // fallback
-            const waypoint = generateWaypointInBand(band);
-            next[id] = {
-              phase: "walking",
-              startedAt: ts,
-              durationMs: calculateWalkDuration(startPos, waypoint),
-              from: { ...startPos, alpha: 1 },
-              to: { ...waypoint, alpha: 1 },
-            };
-          }
-          // absent 상태면 그대로 유지 (처음 idle은 walking 안 함)
+        } else if (currentPhase === "present") {
+          // working -> idle transition: start walking from desk
+          next[id] = createWalkingMotion(target, ts);
         }
+        // Keep absent agents in absent state (no walking on first idle)
       }
 
       return next;
@@ -100,25 +113,14 @@ export function useAgentMotion(args: {
         const progress = (ts - motion.startedAt) / motion.durationMs;
         if (progress < 1) continue;
 
-        if (motion.phase === "entering") {
-          changed = true;
+        if (motion.phase === "entering" || motion.phase === "returning") {
+          // Both entering and returning settle into present state
           next[id] = { ...motion, phase: "present" };
-        } else if (motion.phase === "returning") {
           changed = true;
-          next[id] = { ...motion, phase: "present" };
         } else if (motion.phase === "walking") {
-          // walking 완료: 같은 band 내 새 웨이포인트로 이동
-          const band = findCurrentBand(motion.to.y) ?? WALKABLE_BANDS[1];
-          const waypoint = generateWaypointInBand(band);
-          const pause = WALKING_PAUSE_MIN_MS + Math.random() * (WALKING_PAUSE_MAX_MS - WALKING_PAUSE_MIN_MS);
-
-          next[id] = {
-            phase: "walking",
-            startedAt: ts + pause, // 잠시 멈춤 후 이동
-            durationMs: calculateWalkDuration(motion.to, waypoint),
-            from: { ...motion.to },
-            to: { ...waypoint, alpha: 1 },
-          };
+          // Walking complete: move to next waypoint in same band after pause
+          const pause = getRandomWalkingPause();
+          next[id] = createWalkingMotion(motion.to, ts + pause);
           changed = true;
         }
       }

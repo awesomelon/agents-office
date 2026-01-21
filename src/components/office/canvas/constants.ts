@@ -116,3 +116,40 @@ export const LOCKER_CELL_SIZE = 24; // 각 사물함 칸 크기
 export const LOCKER_COLS = 2; // 열 수
 export const LOCKER_ROWS = 5; // 행 수
 
+// =============================================================================
+// Eye Blink Animation
+// =============================================================================
+export const BLINK_DURATION_MS = 150; // How long eyes stay closed
+export const BLINK_MIN_INTERVAL_MS = 2000; // Minimum time between blinks
+export const BLINK_MAX_INTERVAL_MS = 6000; // Maximum time between blinks
+
+// =============================================================================
+// Idle Animations
+// =============================================================================
+export const IDLE_ANIMATION_MIN_DELAY_MS = 4000;
+export const IDLE_ANIMATION_MAX_DELAY_MS = 10000;
+
+/** Duration in ms for each idle animation type */
+export const IDLE_ANIMATION_DURATIONS = {
+  coffee: 2000,
+  stretch: 1500,
+  lookAround: 2500,
+  penTap: 1800,
+  yawn: 1200,
+} as const;
+
+/** Probability weights for idle animation selection (should sum to ~1) */
+export const IDLE_ANIMATION_WEIGHTS = {
+  coffee: 0.25,
+  stretch: 0.20,
+  lookAround: 0.25,
+  penTap: 0.20,
+  yawn: 0.10,
+} as const;
+
+// =============================================================================
+// Bezier Curve Walking
+// =============================================================================
+export const BEZIER_CURVE_STRENGTH = 0.25; // How curved the walking path is (0 = straight, 1 = very curved)
+export const LEAN_MAX_ANGLE = 0.26; // Maximum body lean angle in radians (~15 degrees)
+

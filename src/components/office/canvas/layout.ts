@@ -1,16 +1,26 @@
 import { DESK_CONFIGS } from "../../../types";
 import {
+  BEZIER_CURVE_STRENGTH,
   BOTTOM_WINDOW_BAND_HEIGHT,
   BOTTOM_WINDOW_BAND_MARGIN,
   OFFICE_HEIGHT,
   OFFICE_WIDTH,
-  WALL_HEIGHT,
   WALKABLE_BANDS,
+  WALKING_SPEED_PX_PER_SEC,
   WALK_X_MAX,
   WALK_X_MIN,
-  WALKING_SPEED_PX_PER_SEC,
+  WALL_HEIGHT,
 } from "./constants";
-import { clamp01, easeOutCubic, lerp, calculateDistance } from "./math";
+import {
+  approximateBezierLength,
+  calculateDistance,
+  calculateLeanAngle,
+  clamp01,
+  easeOutCubic,
+  generateBezierControlPoint,
+  lerp,
+  quadraticBezier,
+} from "./math";
 import type { AgentMotion, ViewportRect } from "./types";
 
 export function getAgentPosition(agentId: string): { x: number; y: number } {
@@ -40,11 +50,6 @@ export function generateWaypointInBand(band: (typeof WALKABLE_BANDS)[number]): {
   return { x, y };
 }
 
-export function calculateWalkDuration(from: { x: number; y: number }, to: { x: number; y: number }): number {
-  const dist = calculateDistance(from, to);
-  return Math.max(800, (dist / WALKING_SPEED_PX_PER_SEC) * 1000);
-}
-
 export function calculateReturnDuration(from: { x: number; y: number }, to: { x: number; y: number }): number {
   const dist = calculateDistance(from, to);
   const RETURN_SPEED_PX_PER_SEC = 60;
@@ -56,10 +61,69 @@ export function calculateReturnDuration(from: { x: number; y: number }, to: { x:
 export function computeMotionState(motion: AgentMotion, now: number): { x: number; y: number; alpha: number } {
   const t = clamp01((now - motion.startedAt) / motion.durationMs);
   const e = easeOutCubic(t);
+
+  // Use Bezier curve if control point is available
+  if (motion.controlPoint) {
+    const pos = quadraticBezier(
+      motion.from,
+      motion.controlPoint,
+      motion.to,
+      e
+    );
+    return {
+      x: pos.x,
+      y: pos.y,
+      alpha: lerp(motion.from.alpha, motion.to.alpha, e),
+    };
+  }
+
   return {
     x: lerp(motion.from.x, motion.to.x, e),
     y: lerp(motion.from.y, motion.to.y, e),
     alpha: lerp(motion.from.alpha, motion.to.alpha, e),
   };
+}
+
+/**
+ * Generate Bezier control point for walking motion.
+ */
+export function generateWalkingControlPoint(
+  from: { x: number; y: number },
+  to: { x: number; y: number }
+): { x: number; y: number } {
+  return generateBezierControlPoint(from, to, BEZIER_CURVE_STRENGTH);
+}
+
+/**
+ * Calculate walk duration using Bezier curve arc length.
+ */
+export function calculateBezierWalkDuration(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  controlPoint: { x: number; y: number }
+): number {
+  const arcLength = approximateBezierLength(from, controlPoint, to, 12);
+  return Math.max(800, (arcLength / WALKING_SPEED_PX_PER_SEC) * 1000);
+}
+
+/**
+ * Calculate body lean angle based on current motion.
+ */
+export function calculateMotionLean(motion: AgentMotion, now: number): number {
+  if (motion.phase !== "walking" && motion.phase !== "returning") {
+    return 0;
+  }
+
+  const t = clamp01((now - motion.startedAt) / motion.durationMs);
+
+  // Get current and next positions to determine direction
+  if (motion.controlPoint) {
+    const e = easeOutCubic(t);
+    const current = quadraticBezier(motion.from, motion.controlPoint, motion.to, e);
+    const next = quadraticBezier(motion.from, motion.controlPoint, motion.to, Math.min(1, e + 0.1));
+    return calculateLeanAngle(current, next) * 0.5; // Reduce lean intensity
+  }
+
+  return calculateLeanAngle(motion.from, motion.to) * 0.3;
 }
 

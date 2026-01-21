@@ -178,11 +178,15 @@ export function drawAgentFace(
   frame: number,
   direction = 1,
   isWalking = false,
-  mood: AgentMood = "neutral"
+  mood: AgentMood = "neutral",
+  isBlinking = false
 ): void {
   drawEyebrows(g, bounce, mood);
-  drawEyes(g, bounce, mood);
-  drawPupils(g, bounce, status, frame, direction, isWalking, mood);
+  drawEyes(g, bounce, mood, isBlinking);
+  // Don't draw pupils when blinking
+  if (!isBlinking) {
+    drawPupils(g, bounce, status, frame, direction, isWalking, mood);
+  }
   drawMouth(g, bounce, status, mood);
   drawMoodEffects(g, bounce, frame, mood);
 }
@@ -207,10 +211,10 @@ function drawEyebrows(g: Graphics, bounce: number, mood: AgentMood): void {
   }
 }
 
-function drawEyes(g: Graphics, bounce: number, mood: AgentMood): void {
+function drawEyes(g: Graphics, bounce: number, mood: AgentMood, isBlinking = false): void {
   g.beginFill(0xffffff);
-  if (mood === "blocked") {
-    // Sleepy/closed eyes (horizontal lines)
+  if (mood === "blocked" || isBlinking) {
+    // Closed eyes (horizontal lines) - for blocked mood or blinking
     g.drawRect(BODY.EYE_LEFT_X, -16 - bounce, BODY.EYE_WIDTH, 2);
     g.drawRect(BODY.EYE_RIGHT_X, -16 - bounce, BODY.EYE_WIDTH, 2);
   } else {
@@ -362,6 +366,8 @@ export interface DrawAgentOptions {
   isWalking: boolean;
   walkDirection: number;
   mood: AgentMood;
+  isBlinking?: boolean;
+  leanAngle?: number; // Body lean angle in radians for curved walking
 }
 
 /**
@@ -378,15 +384,28 @@ export function drawAgent(g: Graphics, options: DrawAgentOptions): void {
     isWalking,
     walkDirection,
     mood,
+    isBlinking = false,
+    leanAngle = 0,
   } = options;
 
   const isAnimating = status === "working" || status === "thinking" || isWalking;
 
   g.clear();
+
+  // Apply body lean rotation for curved walking
+  if (leanAngle !== 0) {
+    g.rotation = leanAngle;
+  }
+
   drawAgentShadow(g);
   drawAgentLegs(g, bounce, isAnimating, frame, isWalking);
   drawAgentBody(g, bounce, color, isAnimating, frame, isWalking);
   drawAgentHead(g, bounce, hairColor);
-  drawAgentFace(g, bounce, status, frame, walkDirection, isWalking, mood);
+  drawAgentFace(g, bounce, status, frame, walkDirection, isWalking, mood, isBlinking);
   drawStatusIndicator(g, bounce, statusColor, status === "error");
+
+  // Reset rotation
+  if (leanAngle !== 0) {
+    g.rotation = 0;
+  }
 }

@@ -42,3 +42,85 @@ export function calculateDistance(from: { x: number; y: number }, to: { x: numbe
   return Math.sqrt((to.x - from.x) ** 2 + (to.y - from.y) ** 2);
 }
 
+// =============================================================================
+// Bezier Curve Utilities
+// =============================================================================
+
+export interface Point2D {
+  x: number;
+  y: number;
+}
+
+/**
+ * Quadratic Bezier curve interpolation.
+ * P(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+ */
+export function quadraticBezier(p0: Point2D, p1: Point2D, p2: Point2D, t: number): Point2D {
+  const mt = 1 - t;
+  const mt2 = mt * mt;
+  const t2 = t * t;
+  return {
+    x: mt2 * p0.x + 2 * mt * t * p1.x + t2 * p2.x,
+    y: mt2 * p0.y + 2 * mt * t * p1.y + t2 * p2.y,
+  };
+}
+
+/**
+ * Generate a control point for natural curved walking path.
+ * The control point is offset perpendicular to the line from start to end.
+ */
+export function generateBezierControlPoint(
+  from: Point2D,
+  to: Point2D,
+  curveStrength = 0.3
+): Point2D {
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+
+  // Perpendicular vector (rotated 90 degrees)
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  // Normalize and scale
+  const perpX = (-dy / dist) * dist * curveStrength;
+  const perpY = (dx / dist) * dist * curveStrength;
+
+  // Randomly choose left or right curve (deterministic based on positions)
+  const hash = hash2dInt(Math.floor(from.x), Math.floor(from.y));
+  const sign = (hash % 2 === 0) ? 1 : -1;
+
+  return {
+    x: midX + perpX * sign,
+    y: midY + perpY * sign,
+  };
+}
+
+/**
+ * Approximate arc length of quadratic Bezier curve using sampling.
+ */
+export function approximateBezierLength(p0: Point2D, p1: Point2D, p2: Point2D, samples = 10): number {
+  let length = 0;
+  let prev = p0;
+  for (let i = 1; i <= samples; i++) {
+    const t = i / samples;
+    const curr = quadraticBezier(p0, p1, p2, t);
+    length += calculateDistance(prev, curr);
+    prev = curr;
+  }
+  return length;
+}
+
+/**
+ * Calculate body lean angle based on movement direction.
+ * Returns angle in radians (positive = leaning right, negative = leaning left).
+ */
+export function calculateLeanAngle(from: Point2D, to: Point2D, maxAngle = 0.26): number {
+  const dx = to.x - from.x;
+  const speed = Math.abs(dx);
+  const maxSpeed = 100;
+  const normalizedSpeed = Math.min(speed / maxSpeed, 1);
+  const sign = dx > 0 ? 1 : -1;
+  return sign * normalizedSpeed * maxAngle;
+}
+
