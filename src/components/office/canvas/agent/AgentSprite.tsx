@@ -6,10 +6,12 @@ import { AGENT_COLORS, STATUS_COLORS } from "../../../../types";
 import type { Agent } from "../../../../types";
 import { formatAgentMessage } from "../../../../utils";
 import {
-  ANIMATION_INTERVAL_MS,
+  BOUNCE_AMPLITUDE,
+  LIMB_CYCLE_DURATION_MS,
   SPEECH_BUBBLE_MAX_CHARS,
   SPEECH_BUBBLE_TRUNCATE_AT,
-  WALKING_ANIMATION_INTERVAL_MS,
+  WALK_BOUNCE_AMPLITUDE,
+  WALK_LIMB_CYCLE_DURATION_MS,
 } from "../constants";
 import { calculateMotionLean } from "../layout";
 import type { AgentMood, AgentMotion, BlinkState } from "../types";
@@ -26,18 +28,16 @@ interface AgentSpriteProps {
   alpha: number;
   motion?: AgentMotion;
   mood: AgentMood;
+  now: number;
 }
 
-export function AgentSprite({ agent, x, y, alpha, motion, mood }: AgentSpriteProps): JSX.Element {
-  const [frame, setFrame] = useState(0);
-  const [walkFrame, setWalkFrame] = useState(0);
-  const nowRef = useRef(performance.now());
+export function AgentSprite({ agent, x, y, alpha, motion, mood, now }: AgentSpriteProps): JSX.Element {
   const color = AGENT_COLORS[agent.agent_type];
   const statusColor = STATUS_COLORS[agent.status];
   const hairColor = HAIR_COLORS[agent.agent_type];
 
   // Blink state using centralized blink system
-  const blinkRef = useRef<BlinkState>(createBlinkState(performance.now()));
+  const blinkRef = useRef<BlinkState>(createBlinkState(now));
   const [isBlinking, setIsBlinking] = useState(false);
 
   // Walking state
@@ -47,49 +47,36 @@ export function AgentSprite({ agent, x, y, alpha, motion, mood }: AgentSpritePro
   // Calculate lean angle for curved walking
   const leanAngle = useMemo(() => {
     if (!motion) return 0;
-    return calculateMotionLean(motion, nowRef.current);
-  }, [motion]);
+    return calculateMotionLean(motion, now);
+  }, [motion, now]);
 
   // Eye blink effect - uses immutable update pattern
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = performance.now();
-      nowRef.current = now;
-      const prevState = blinkRef.current;
-      const nextState = updateBlinkState(prevState, now);
+    const prevState = blinkRef.current;
+    const nextState = updateBlinkState(prevState, now);
 
-      // Only update if state actually changed
-      if (nextState !== prevState) {
-        blinkRef.current = nextState;
-        if (nextState.isBlinking !== prevState.isBlinking) {
-          setIsBlinking(nextState.isBlinking);
-        }
+    // Only update if state actually changed
+    if (nextState !== prevState) {
+      blinkRef.current = nextState;
+      if (nextState.isBlinking !== prevState.isBlinking) {
+        setIsBlinking(nextState.isBlinking);
       }
-    }, 50); // Check every 50ms for responsive blinking
+    }
+  }, [now]);
 
-    return () => clearInterval(interval);
-  }, []);
+  // Calculate continuous animation phase (0-1)
+  const animationPhase = useMemo(() => {
+    if (agent.status === "idle" && !isWalking) return 0;
+    const cycleDuration = isWalking ? WALK_LIMB_CYCLE_DURATION_MS : LIMB_CYCLE_DURATION_MS;
+    return (now % cycleDuration) / cycleDuration;
+  }, [agent.status, isWalking, now]);
 
-  useEffect(() => {
-    if (agent.status === "idle" && !isWalking) return;
-
-    const interval = setInterval(() => {
-      setFrame((f) => (f + 1) % 4);
-    }, ANIMATION_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, [agent.status, isWalking]);
-
-  // Faster walking animation
-  useEffect(() => {
-    if (!isWalking) return;
-
-    const interval = setInterval(() => {
-      setWalkFrame((f) => (f + 1) % 4);
-    }, WALKING_ANIMATION_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, [isWalking]);
+  // Continuous bounce (smooth sinusoidal)
+  const bounce = useMemo(() => {
+    if (agent.status === "idle" && !isWalking) return 0;
+    const amplitude = isWalking ? WALK_BOUNCE_AMPLITUDE : BOUNCE_AMPLITUDE;
+    return Math.sin(animationPhase * Math.PI * 2) * amplitude;
+  }, [agent.status, isWalking, animationPhase]);
 
   const message = useMemo(() => {
     if (agent.status === "idle") return "";
@@ -99,9 +86,6 @@ export function AgentSprite({ agent, x, y, alpha, motion, mood }: AgentSpritePro
     });
   }, [agent.status, agent.current_task]);
 
-  const effectiveFrame = isWalking ? walkFrame : frame;
-  const bounce = (agent.status !== "idle" || isWalking) ? Math.sin(effectiveFrame * Math.PI / 2) * 3 : 0;
-
   const draw = useCallback((g: PixiGraphics) => {
     drawAgent(g, {
       bounce,
@@ -109,14 +93,14 @@ export function AgentSprite({ agent, x, y, alpha, motion, mood }: AgentSpritePro
       hairColor,
       statusColor,
       status: agent.status,
-      frame: effectiveFrame,
+      animationPhase,
       isWalking,
       walkDirection,
       mood,
       isBlinking,
       leanAngle,
     });
-  }, [bounce, color, hairColor, statusColor, agent.status, effectiveFrame, isWalking, walkDirection, mood, isBlinking, leanAngle]);
+  }, [bounce, color, hairColor, statusColor, agent.status, animationPhase, isWalking, walkDirection, mood, isBlinking, leanAngle]);
 
   const showBubble = agent.status !== "idle" && message;
 

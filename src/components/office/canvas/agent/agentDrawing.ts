@@ -73,12 +73,13 @@ export function drawAgentShadow(g: Graphics): void {
   g.endFill();
 }
 
-function computeLegOffset(isWalking: boolean, isAnimating: boolean, frame: number): number {
+function computeLegOffset(isWalking: boolean, isAnimating: boolean, phase: number): number {
   if (isWalking) {
-    return Math.sin(frame * Math.PI) * 4;
+    // Continuous: phase 0-1 maps to full sine cycle
+    return Math.sin(phase * Math.PI * 2) * 4;
   }
   if (isAnimating) {
-    return Math.sin(frame * Math.PI) * 2;
+    return Math.sin(phase * Math.PI * 2) * 2;
   }
   return 0;
 }
@@ -87,10 +88,10 @@ export function drawAgentLegs(
   g: Graphics,
   bounce: number,
   isAnimating: boolean,
-  frame: number,
+  phase: number,
   isWalking = false
 ): void {
-  const legOffset = computeLegOffset(isWalking, isAnimating, frame);
+  const legOffset = computeLegOffset(isWalking, isAnimating, phase);
 
   // Legs
   g.beginFill(0x3a3a5a);
@@ -105,12 +106,13 @@ export function drawAgentLegs(
   g.endFill();
 }
 
-function computeArmSwing(isWalking: boolean, isAnimating: boolean, frame: number): number {
+function computeArmSwing(isWalking: boolean, isAnimating: boolean, phase: number): number {
   if (isWalking) {
-    return Math.sin(frame * Math.PI) * 5;
+    // Continuous: phase 0-1 maps to full sine cycle
+    return Math.sin(phase * Math.PI * 2) * 5;
   }
   if (isAnimating) {
-    return Math.sin(frame * Math.PI) * 3;
+    return Math.sin(phase * Math.PI * 2) * 3;
   }
   return 0;
 }
@@ -120,10 +122,10 @@ export function drawAgentBody(
   bounce: number,
   color: number,
   isAnimating: boolean,
-  frame: number,
+  phase: number,
   isWalking = false
 ): void {
-  const armSwing = computeArmSwing(isWalking, isAnimating, frame);
+  const armSwing = computeArmSwing(isWalking, isAnimating, phase);
 
   // Torso
   g.beginFill(color);
@@ -172,7 +174,7 @@ export function drawAgentFace(
   g: Graphics,
   bounce: number,
   status: string,
-  frame: number,
+  phase: number,
   direction = 1,
   isWalking = false,
   mood: AgentMood = "neutral",
@@ -182,10 +184,10 @@ export function drawAgentFace(
   drawEyes(g, bounce, mood, isBlinking);
   // Don't draw pupils when blinking
   if (!isBlinking) {
-    drawPupils(g, bounce, status, frame, direction, isWalking, mood);
+    drawPupils(g, bounce, status, phase, direction, isWalking, mood);
   }
   drawMouth(g, bounce, status, mood);
-  drawMoodEffects(g, bounce, frame, mood);
+  drawMoodEffects(g, bounce, phase, mood);
 }
 
 function drawEyebrows(g: Graphics, bounce: number, mood: AgentMood): void {
@@ -225,7 +227,7 @@ function drawPupils(
   g: Graphics,
   bounce: number,
   status: string,
-  frame: number,
+  phase: number,
   direction: number,
   isWalking: boolean,
   mood: AgentMood
@@ -234,7 +236,7 @@ function drawPupils(
 
   const { lookX, lookY } = isWalking
     ? { lookX: direction * 1.5, lookY: 0 }
-    : getPupilOffset(status, frame, mood);
+    : getPupilOffset(status, phase, mood);
 
   g.beginFill(0x2a2a3a);
   g.drawRect(-6 + lookX, -17 - bounce + lookY, BODY.PUPIL_SIZE, BODY.PUPIL_SIZE);
@@ -249,9 +251,9 @@ function drawMouth(g: Graphics, bounce: number, status: string, mood: AgentMood)
   g.endFill();
 }
 
-function drawMoodEffects(g: Graphics, bounce: number, frame: number, mood: AgentMood): void {
-  // Sweat drop for stressed mood
-  if (mood === "stressed" && frame % 2 === 0) {
+function drawMoodEffects(g: Graphics, bounce: number, phase: number, mood: AgentMood): void {
+  // Sweat drop visibility based on continuous phase
+  if (mood === "stressed" && phase < 0.5) {
     g.beginFill(0x60a5fa, 0.7);
     g.drawRect(10, -16 - bounce, 2, 3);
     g.drawRect(10, -13 - bounce, 2, 2);
@@ -270,7 +272,7 @@ function drawMoodEffects(g: Graphics, bounce: number, frame: number, mood: Agent
 
 function getPupilOffset(
   status: string,
-  frame: number,
+  phase: number,
   mood: AgentMood = "neutral"
 ): { lookX: number; lookY: number } {
   // Mood-based pupil adjustments
@@ -278,13 +280,13 @@ function getPupilOffset(
     return { lookX: 0, lookY: 0 }; // Straight ahead, focused
   }
   if (mood === "stressed") {
-    // Slightly jittery/nervous
-    return { lookX: Math.sin(frame * 1.5) * 1, lookY: -0.5 };
+    // Continuous jitter
+    return { lookX: Math.sin(phase * Math.PI * 3) * 1, lookY: -0.5 };
   }
 
   // Status-based defaults
   if (status === "thinking") {
-    return { lookX: Math.sin(frame * 0.8) * 2, lookY: -1 };
+    return { lookX: Math.sin(phase * Math.PI * 2) * 2, lookY: -1 };
   }
   if (status === "passing") {
     return { lookX: 2, lookY: 0 };
@@ -359,7 +361,7 @@ export interface DrawAgentOptions {
   hairColor: number;
   statusColor: number;
   status: string;
-  frame: number;
+  animationPhase: number;  // Continuous 0-1 phase for smooth animation
   isWalking: boolean;
   walkDirection: number;
   mood: AgentMood;
@@ -377,7 +379,7 @@ export function drawAgent(g: Graphics, options: DrawAgentOptions): void {
     hairColor,
     statusColor,
     status,
-    frame,
+    animationPhase,
     isWalking,
     walkDirection,
     mood,
@@ -395,10 +397,10 @@ export function drawAgent(g: Graphics, options: DrawAgentOptions): void {
   }
 
   drawAgentShadow(g);
-  drawAgentLegs(g, bounce, isAnimating, frame, isWalking);
-  drawAgentBody(g, bounce, color, isAnimating, frame, isWalking);
+  drawAgentLegs(g, bounce, isAnimating, animationPhase, isWalking);
+  drawAgentBody(g, bounce, color, isAnimating, animationPhase, isWalking);
   drawAgentHead(g, bounce, hairColor);
-  drawAgentFace(g, bounce, status, frame, walkDirection, isWalking, mood, isBlinking);
+  drawAgentFace(g, bounce, status, animationPhase, walkDirection, isWalking, mood, isBlinking);
   drawStatusIndicator(g, bounce, statusColor, status === "error");
 
   // Reset rotation

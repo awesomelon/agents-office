@@ -78,6 +78,12 @@ export const WALKING_PAUSE_MIN_MS = 2000;
 export const WALKING_PAUSE_MAX_MS = 4000;
 export const WALKING_ANIMATION_INTERVAL_MS = 180;
 
+// Continuous limb animation (replaces discrete frame intervals)
+export const LIMB_CYCLE_DURATION_MS = 500;       // Full cycle when working
+export const WALK_LIMB_CYCLE_DURATION_MS = 360;  // Faster cycle when walking
+export const BOUNCE_AMPLITUDE = 3;               // Pixels
+export const WALK_BOUNCE_AMPLITUDE = 4;          // Slightly larger when walking
+
 // Mood timing thresholds (ms)
 export const MOOD_FOCUSED_THRESHOLD_MS = 2000;
 export const MOOD_STRESSED_THRESHOLD_MS = 5000;

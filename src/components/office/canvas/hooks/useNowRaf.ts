@@ -56,8 +56,9 @@ export function useNowRaf(args: {
       const hasActiveEffects = effectsRef.current.length > 0;
       const needsUpdate = hasActiveDocTransfers || hasEnteringMotions || hasWalkingMotions || hasActiveEffects;
 
-      // Only trigger re-render when animations are active (throttled to ~30fps)
-      if (needsUpdate && t - lastUpdateTime > 33) {
+      // Adaptive throttling: 60fps during animation, 5fps idle
+      const targetInterval = needsUpdate ? 16 : 200;
+      if (t - lastUpdateTime > targetInterval) {
         lastUpdateTime = t;
         forceUpdate((n) => n + 1);
       }

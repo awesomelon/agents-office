@@ -67,7 +67,7 @@ cd src-tauri && cargo test
 ### Frontend (src/)
 - **components/office/OfficeCanvas.tsx**: PixiJS-based office rendering (550×700 canvas)
 - **components/office/canvas/**: OfficeCanvas submodules
-  - `agent/AgentSprite.tsx`: Agent character rendering and bounce animation
+  - `agent/AgentSprite.tsx`: Agent character rendering with continuous phase-based animation
   - `desk/Desk.tsx`: Desk + monitor (status-based screen), AlertLight, QueueIndicator
   - `document/FlyingDocument.tsx`: Document transfer animation between agents (parabolic trajectory, rotation, tool stamp)
   - `effects/EffectsLayer.tsx`: Visual effects layer (4 effect types)
@@ -75,9 +75,9 @@ cd src-tauri && cargo test
   - `partition/HorizontalPartition.tsx`: Section divider partition (300px width)
   - `hud/HudDisplay.tsx`: Top HUD bar (tool call/error/agent switch counts, rate limit indicator)
   - `hooks/useAgentMotion.ts`: Agent motion state management (5-phase system)
-  - `hooks/useNowRaf.ts`: RAF loop driver (~30fps throttle during animation)
+  - `hooks/useNowRaf.ts`: RAF loop driver (adaptive: 60fps animation, 5fps idle)
   - `hooks/useOfficeViewport.ts`: Viewport scaling calculation
-  - `constants.ts`, `layout.ts`, `types.ts`, `math.ts`: Constants, layout utils, types, math functions
+  - `constants.ts`, `layout.ts`, `types.ts`, `math.ts`: Constants, layout utils, types, math/easing functions
 - **hooks/useTauriEvents.ts**: Subscribe to Tauri events via `listen("app-event")`, detect agent switches, record HUD metrics
 - **store/agentStore.ts**: Zustand state management
   - `documentTransfer`: Document transfer animation state (fromAgentId, toAgentId, startedAt)
@@ -190,8 +190,9 @@ Visualizes task handoff between agents as document passing:
 - Movement only within same Y band (prevents partition crossing)
 - Speed: 35px/sec (`WALKING_SPEED_PX_PER_SEC`)
 - Random pause 2-4 seconds after reaching waypoint before next move
-- Walk animation: 180ms frame interval, amplified limb movement
+- Walk animation: Continuous phase-based (360ms cycle), amplified limb movement
 - Eye gaze changes based on movement direction
+- Motion-specific easing: `easeOutBack` (entering), `easeInOutSine` (walking), `easeOutCubic` (returning)
 
 **Walkable Areas**:
 - X range: 30~295 (`WALK_X_MIN` ~ `WALK_X_MAX`)
@@ -264,6 +265,28 @@ Rate limit pattern detection: `isLimitReachedMessage()` function matches pattern
 3. Last tool_call within 2 seconds → `focused`
 4. Default → `neutral`
 
+### Animation System (Continuous Phase)
+Agent animations use continuous time-based phases instead of discrete frames:
+
+**Key Constants** (`constants.ts`):
+- `LIMB_CYCLE_DURATION_MS = 500`: Full limb animation cycle when working
+- `WALK_LIMB_CYCLE_DURATION_MS = 360`: Faster cycle when walking
+- `BOUNCE_AMPLITUDE = 3`: Bounce pixels when working
+- `WALK_BOUNCE_AMPLITUDE = 4`: Larger bounce when walking
+
+**Animation Flow**:
+1. `OfficeCanvas` passes `now={nowRef.current}` to `AgentSprite`
+2. `AgentSprite` calculates `animationPhase = (now % cycleDuration) / cycleDuration` (0-1)
+3. `agentDrawing.ts` uses `Math.sin(phase * Math.PI * 2)` for smooth sinusoidal motion
+4. Limbs, bounce, and pupil movement all derive from continuous phase
+
+**Easing Functions** (`math.ts`):
+- `easeOutCubic`: Default deceleration
+- `easeOutQuad`: Gentle deceleration
+- `easeInOutQuad`: Smooth acceleration/deceleration
+- `easeOutBack`: Bouncy arrival (slight overshoot)
+- `easeInOutSine`: Natural walking motion
+
 ### useNowRaf Pattern
 RAF (requestAnimationFrame) based animation loop:
 ```typescript
@@ -275,7 +298,7 @@ useNowRaf({
   removeExpiredEffects,
 });
 ```
-- Throttles to ~30fps only during active animation (33ms interval)
+- Adaptive throttling: 60fps (16ms) during animation, 5fps (200ms) idle
 - Mirrors frequently changing state via refs → single effect setup
 - Active state check: Document transfers, entering/walking/returning motion, visual effects
 

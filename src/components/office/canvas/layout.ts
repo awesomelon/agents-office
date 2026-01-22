@@ -16,6 +16,8 @@ import {
   calculateDistance,
   calculateLeanAngle,
   clamp01,
+  easeInOutSine,
+  easeOutBack,
   easeOutCubic,
   generateBezierControlPoint,
   lerp,
@@ -60,7 +62,22 @@ export function calculateReturnDuration(from: { x: number; y: number }, to: { x:
 
 export function computeMotionState(motion: AgentMotion, now: number): { x: number; y: number; alpha: number } {
   const t = clamp01((now - motion.startedAt) / motion.durationMs);
-  const e = easeOutCubic(t);
+
+  // Select easing based on motion phase
+  let e: number;
+  switch (motion.phase) {
+    case "entering":
+      e = easeOutBack(t);  // Slight overshoot for arrival feel
+      break;
+    case "walking":
+      e = easeInOutSine(t);  // Smooth acceleration/deceleration
+      break;
+    case "returning":
+      e = easeOutCubic(t);  // Quick return, smooth stop
+      break;
+    default:
+      e = easeOutCubic(t);
+  }
 
   // Use Bezier curve if control point is available
   if (motion.controlPoint) {

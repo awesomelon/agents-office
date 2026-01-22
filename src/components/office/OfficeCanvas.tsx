@@ -129,6 +129,7 @@ export function OfficeCanvas(): JSX.Element {
                 alpha={state.alpha}
                 motion={motion}
                 mood={mood}
+                now={nowRef.current}
               />
             );
           })}
