@@ -34,4 +34,17 @@ assert.ok(
   tauri.app.security.csp,
   "Desktop content security policy is required",
 );
+const rustTauriVersion = read("src-tauri/Cargo.lock").match(
+  /\[\[package\]\]\nname = "tauri"\nversion = "([^"]+)"/,
+)?.[1];
+const apiVersion = lock.packages["node_modules/@tauri-apps/api"]?.version;
+assert.ok(
+  rustTauriVersion && apiVersion,
+  "Both resolved Tauri versions are required",
+);
+assert.equal(
+  rustTauriVersion.split(".").slice(0, 2).join("."),
+  apiVersion.split(".").slice(0, 2).join("."),
+  "Tauri Rust and JavaScript API must share a major/minor release",
+);
 console.log(`Metadata aligned at ${pkg.version}`);
