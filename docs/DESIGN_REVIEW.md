@@ -1,5 +1,9 @@
 # Codex Office: studio design review
 
+The follow-up [3D character integration](3D_AGENTS.md) replaces the pins described
+below with eight rendered teammates and matching portraits. This original review
+and provisional score remain historical; the follow-up records its own evidence.
+
 ## Scope and evidence
 
 This is an implementation review, not a completed screenshot audit. The current
