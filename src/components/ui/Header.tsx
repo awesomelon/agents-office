@@ -23,14 +23,14 @@ export function Header() {
       </a>
       <div className="brand">
         <span className="brand-mark" aria-hidden="true">
-          ▦
+          C
         </span>
         <div>
           <h1>Codex Office</h1>
-          <p>Your local activity, a little more alive.</p>
+          <p>A studio for your Codex activity.</p>
         </div>
       </div>
-      <div className="header-actions">
+      <div className="header-actions" aria-label="Office views">
         <span
           className={`status-pill ${desktop && state.watcherActive && !state.connectionError ? "is-live" : ""}`}
         >

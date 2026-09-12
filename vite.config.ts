@@ -16,21 +16,18 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {
-        manualChunks: getManualChunks(),
+        // Shared React/CommonJS helpers must not pull optional Pixi into Studio.
+        manualChunks(id) {
+          if (
+            id.includes("commonjsHelpers") ||
+            /\/node_modules\/(react|react-dom|scheduler)\//.test(id)
+          )
+            return "react";
+          if (/\/node_modules\/(@pixi\/|pixi\.js\/)/.test(id)) return "pixi";
+          if (id.includes("/node_modules/@tauri-apps/")) return "tauri";
+          if (id.includes("/node_modules/zustand/")) return "vendor";
+        },
       },
     },
   },
 });
-
-function getManualChunks(): Record<string, string[]> {
-  return {
-    // PixiJS (~420 kB) - 가장 큰 의존성
-    pixi: ["pixi.js", "@pixi/react"],
-    // React (~140 kB)
-    react: ["react", "react-dom"],
-    // Tauri APIs (~30 kB)
-    tauri: ["@tauri-apps/api"],
-    // 상태 관리 (~10 kB)
-    vendor: ["zustand"],
-  };
-}

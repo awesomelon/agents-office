@@ -1,6 +1,6 @@
-import { Component, useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import { useShallow } from "zustand/shallow";
-import { OfficeCanvas } from "./components/office/OfficeCanvas";
+import { OfficeStudio } from "./components/office/OfficeStudio";
 import { Inbox } from "./components/ui/Inbox";
 import { Header } from "./components/ui/Header";
 import { Timeline } from "./components/ui/Timeline";
@@ -14,29 +14,6 @@ import {
   useSettingsStore,
 } from "./store";
 import { DESK_CONFIGS } from "./types";
-
-class OfficeBoundary extends Component<
-  { children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    return this.state.failed ? (
-      <div className="canvas-fallback">
-        <h3>The office view is unavailable.</h3>
-        <p>
-          This device could not initialize the graphics renderer. Activity roles
-          and the event inbox remain available.
-        </p>
-      </div>
-    ) : (
-      this.props.children
-    );
-  }
-}
 
 function ActivityRoles() {
   const agents = useAgentStore((state) => state.agents);
@@ -104,26 +81,25 @@ function App() {
         <section className="office-section" aria-labelledby="office-title">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">THE FLOOR</span>
-              <h2 id="office-title">Codex activity, at a glance.</h2>
+              <span className="eyebrow">YOUR WORKSPACE, IN VIEW</span>
+              <h2 id="office-title">A little space for big ideas.</h2>
             </div>
             <span className="local-badge">Passive observer</span>
           </div>
           <Metrics />
-          {showOffice && (
-            <div id="office-visual" className="canvas-wrap" aria-hidden="true">
-              <OfficeBoundary>
-                <OfficeCanvas />
-              </OfficeBoundary>
+          {showOffice ? (
+            <div id="office-visual">
+              <OfficeStudio />
+            </div>
+          ) : (
+            <div className="office-caption">
+              <p>
+                Desks represent activity roles, not the number or identity of
+                Codex agents. Status reflects observed activity.
+              </p>
+              <ActivityRoles />
             </div>
           )}
-          <div className="office-caption">
-            <p>
-              Desks represent activity roles, not the number or identity of
-              Codex agents. Moving papers illustrate changes in activity.
-            </p>
-            <ActivityRoles />
-          </div>
         </section>
         <Inbox />
       </main>

@@ -1,8 +1,15 @@
 # Codex Office
 
-A local desktop companion that turns **Codex activity** into a pixel-art office.
-Watch exploration, planning, editing, commands and collaboration move through eight
-workflow desks, with a searchable activity inbox alongside the scene.
+A local desktop companion that brings **Codex activity** into a warm, illustrated studio.
+Explore eight workflow spaces, select a role to inspect its recent events, or follow
+new activity automatically. A searchable event inbox sits alongside the office.
+
+![The Codex studio illustration: six desks, a resource library and a conversation lounge](public/assets/codex-studio.webp)
+
+The image above is the studio artwork; live status labels and controls are rendered by the app.
+**Studio view** uses a lightweight 3D-rendered illustration with interactive activity zones.
+**Pixel view** preserves the animated office. Studio view needs no WebGL; the pixel
+renderer loads when selected. Both views observe the same local activity.
 
 This is an independent community project. The desks illustrate workflow roles;
 they are not a count of actual Codex agents. Codex Office observes saved activity
@@ -47,16 +54,16 @@ their calls within each thread and recognizes turn completion and interruption.
 Unknown records are skipped. The inbox shows bounded summaries rather than raw
 prompts, command arguments, source code or command output.
 
-| Desk | Observed activity |
-| --- | --- |
-| Explorer | File discovery and reading commands |
-| Analyzer | Content search and web search |
-| Architect | Plans and agent delegation |
-| Developer | Patch application and editing |
-| Operator | Shell commands and process interaction |
+| Desk      | Observed activity                        |
+| --------- | ---------------------------------------- |
+| Explorer  | File discovery and reading commands      |
+| Analyzer  | Content search and web search            |
+| Architect | Plans and agent delegation               |
+| Developer | Patch application and editing            |
+| Operator  | Shell commands and process interaction   |
 | Validator | Recognized test, lint and build commands |
-| Connector | MCP and external tool calls |
-| Liaison | Messages and user interaction |
+| Connector | MCP and external tool calls              |
+| Liaison   | Messages and user interaction            |
 
 Classification is an approximation. A shell wrapper or a new tool name may be
 shown under a general role. A tool result means that a result was recorded;
@@ -97,6 +104,7 @@ npm run tauri:build    # native desktop bundle; OS prerequisites required
 CI checks frontend, launcher and pure Rust behavior, and builds the macOS desktop
 application. See [contributing](docs/CONTRIB.md), [operations](docs/RUNBOOK.md)
 and the [project review](docs/REVIEW.md) for scope and validation evidence.
+The [design review](docs/DESIGN_REVIEW.md) records the studio redesign and its validation limits.
 
 ## macOS launcher
 
