@@ -22,8 +22,10 @@ target/
 
 # Tauri
 src-tauri/target/
-src-tauri/Cargo.lock
 
 
 .npm-cache/
 .cache-test/
+coverage/
+*.zip
+*.zip.sha256

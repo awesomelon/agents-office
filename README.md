@@ -1,156 +1,113 @@
-# Agents Office
+# Codex Office
 
-A Tauri desktop app that visualizes Claude Code's workflow as **office agents (Explorer/Analyzer/Architect/Developer/Operator/Validator/Connector/Liaison)** working in a pixel art office.
-It watches local Claude logs (`$HOME/.claude/**`) and streams events to the frontend (PixiJS canvas + Inbox log panel).
+A local desktop companion that turns **Codex activity** into a pixel-art office.
+Watch exploration, planning, editing, commands and collaboration move through eight
+workflow desks, with a searchable activity inbox alongside the scene.
 
-![Agents Office screenshot](./image.png)
+This is an independent community project. The desks illustrate workflow roles;
+they are not a count of actual Codex agents. Codex Office observes saved activity
+and never starts, controls or changes your Codex sessions.
 
-## Key Features
-- **Agent Visualization**: Displays agent states (Idle/Working/Thinking/Passing/Error) in pixel art style
-- **Inbox Log**: Parses Claude log lines into `LogEntry` and displays recent items (up to 100)
-- **Watcher Status**: Shows `Watching/Idle` status and session ID (event-based)
+## Try it
 
-## Agent UI Legend (Expressions/Icons)
-
-### Agent Types (Workflow-based Roles) & Colors
-- **Explorer**: File exploration with Read/Glob (color `#3B82F6` blue)
-- **Analyzer**: Content analysis with Grep/WebSearch (color `#06B6D4` cyan)
-- **Architect**: Planning and task management with TodoWrite/Task (color `#F472B6` pink)
-- **Developer**: Code writing with Write/Edit/NotebookEdit (color `#22C55E` green)
-- **Operator**: Command execution with general Bash (color `#FBBF24` yellow)
-- **Validator**: Testing and validation with test/git Bash commands (color `#F97316` orange)
-- **Connector**: External integrations with WebFetch/MCP tools/Skill (color `#8B5CF6` purple)
-- **Liaison**: User communication with AskUserQuestion/Error (color `#EC4899` pink)
-
-### Status (Idle/Working/Thinking/Passing/Error) Display
-- **Status Indicator (dot next to head)**: Color changes based on status
-  - `idle`: `#6B7280`
-  - `working`: `#22C55E`
-  - `thinking`: `#3B82F6`
-  - `passing`: `#A855F7`
-  - `error`: `#EF4444`
-- **Error Badge**: Red exclamation badge appears above head when in `error` state
-- **Desk Monitor Screen**
-  - `idle`: Dark screen + scanlines
-  - `working`: Agent-colored code lines scrolling + cursor blinking
-  - `thinking`: Loading dots (3) + icon (circular "brain/gear" style)
-  - `passing`: Right-moving arrow + transfer icon
-  - `error`: Red flash + X mark
-
-### Expression (Mood) Display
-Expressions are separate from "status" - eyes/eyebrows/mouth area change based on mood.
-- **neutral**: Default expression
-- **focused**: Concentrated state from recent tool call (slightly lowered eyebrows, slight smile)
-- **stressed**: Tense state after/during error (worried eyebrows + sweat drop)
-- **blocked**: Blocked state from rate limit, etc. (closed eyes + Z mark)
-
-### Error/Rate Limit (Waiting) Additional Display
-- **Red Warning Light**: When an error is detected, the warning light next to the desk blinks
-- **"On Vacation" Sign + Wait Indicator**: When blocked by rate limit, displays "On Vacation" sign with hourglass/dots (waiting)
-
-### Speech Bubble (Task Summary)
-- Speech bubble appears when not `idle`, showing tool call name summarized (e.g., `Read` → "Reading file")
-- Long text is truncated, and bubble auto-hides after no updates for a period
-
-## Requirements
-- **Node.js**: 18 or higher recommended
-- **Rust**: stable toolchain
-- **Tauri prerequisites**: OS-specific build dependencies required. See [Tauri prerequisites](https://tauri.app/start/prerequisites/) for details.
-
-## Running the App
-
-### 0) Run directly with npx (macOS, recommended)
-
-You can run the app without local Rust/Tauri toolchain using the command below.
-The actual app binary is downloaded from GitHub Releases and cached for faster subsequent runs.
+Use Node.js 22+ and npm:
 
 ```bash
-npx @j-ho/agents-office
-```
-
-- **Pin specific version**:
-
-```bash
-npx @j-ho/agents-office --version 0.1.2
-```
-
-- **Force cache refresh**:
-
-```bash
-npx @j-ho/agents-office --force
-```
-
-#### Gatekeeper Note (macOS)
-If the downloaded app is blocked, you may need to select "Open Anyway" in **System Settings → Privacy & Security**.
-
-### 1) Install Dependencies
-
-```bash
-npm install
-```
-
-### 2) Run in Browser (Development)
-
-```bash
+git clone https://github.com/awesomelon/agents-office.git
+cd agents-office
+npm ci
 npm run dev
 ```
 
-### 3) Run as Desktop App (Tauri Development)
+The browser opens a clearly labeled preview with an opt-in synthetic demo.
+It cannot read your local Codex files. For real activity, install the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) and stable Rust,
+then run:
 
 ```bash
 npm run tauri:dev
 ```
 
-## Build
+Start Codex locally and submit a new task. Existing history is skipped when the
+observer starts, so old tasks do not appear as live work. Newly appended records
+appear automatically. An empty or missing sessions folder produces an explanatory
+status and is checked again without restarting the app.
 
-### Web Build
+## What it reads
+
+Only plain `sessions/**/*.jsonl` files below `CODEX_HOME` are observed. If that
+environment variable is unset or empty, the default is `~/.codex/sessions`.
+Set `CODEX_HOME` before launching the desktop application for a custom location.
+On macOS, applications opened from Finder may not inherit your shell variables;
+use `CODEX_HOME=/absolute/path npm run tauri:dev` when developing.
+
+The observer supports Codex rollout envelopes such as `session_meta`,
+`response_item` and selected `event_msg` records. It correlates tool results with
+their calls within each thread and recognizes turn completion and interruption.
+Unknown records are skipped. The inbox shows bounded summaries rather than raw
+prompts, command arguments, source code or command output.
+
+| Desk | Observed activity |
+| --- | --- |
+| Explorer | File discovery and reading commands |
+| Analyzer | Content search and web search |
+| Architect | Plans and agent delegation |
+| Developer | Patch application and editing |
+| Operator | Shell commands and process interaction |
+| Validator | Recognized test, lint and build commands |
+| Connector | MCP and external tool calls |
+| Liaison | Messages and user interaction |
+
+Classification is an approximation. A shell wrapper or a new tool name may be
+shown under a general role. A tool result means that a result was recorded;
+success is claimed only when the record carries enough evidence.
+
+## Privacy and limits
+
+- All observation and rendering happen locally. No analytics, remote fonts,
+  model requests or telemetry are needed by the desktop viewer.
+- Credentials (`auth.json`), configuration, SQLite databases, archived sessions
+  and other assistants' directories are outside the source scope. Symlinked
+  source entries are skipped.
+- The UI can show local directory and thread identifiers. Consider this before
+  screen sharing. Clearing the inbox does not delete Codex files.
+- Rollout JSONL is an internal, evolving format, not a stable integration API.
+  A Codex host that does not persist these files cannot be observed by this app.
+- Saved records do not reliably expose approval prompts, live process status,
+  or every intermediate event. “Watching” describes the observer, not proof
+  that Codex is executing. Activity status is inferred from recorded events.
+- Work is bounded per poll and discovery cycle. Large session trees surface a
+  capacity warning rather than silently claiming complete coverage.
+
+The compatibility implementation is based on the official
+[rollout envelope](https://github.com/openai/codex/blob/main/codex-rs/history/src/rollout_payload.rs),
+[protocol](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/protocol.rs),
+[response items](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/models.rs)
+and [persistence policy](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/policy.rs).
+Tests use synthetic examples and never contain private session transcripts.
+
+## Checks and builds
 
 ```bash
-npm run build
+npm run check          # metadata, TypeScript, frontend/launcher tests, web build
+npm run test:core      # Rust parser/tailer tests; no desktop libraries required
+npm run tauri:build    # native desktop bundle; OS prerequisites required
 ```
 
-### Desktop (Tauri) Build
+CI checks frontend, launcher and pure Rust behavior, and builds the macOS desktop
+application. See [contributing](docs/CONTRIB.md), [operations](docs/RUNBOOK.md)
+and the [project review](docs/REVIEW.md) for scope and validation evidence.
 
-```bash
-npm run tauri:build
-```
+## macOS launcher
 
-## Permissions/Security (Important)
-This app uses Tauri capabilities for **local file read permissions** to access Claude logs.
+The package name remains `@j-ho/agents-office` for compatibility. The Codex-only
+launcher requires a `Codex-Office-macos.zip` release asset and its integrity
+metadata. It refuses legacy releases that contain only the previous asset name.
+The inner bundle remains `Agents Office.app`; its window is titled Codex Office.
 
-- **Paths accessed**: `$HOME/.claude/**`
-  - Primarily watches `$HOME/.claude/debug` and `$HOME/.claude/projects` subdirectories
-- **File types read**: `.txt`, `.jsonl`, `.json`
-- **Behavior**: Only reads "newly added lines" from files and emits events to the frontend
-- **Note**: Logs may contain sensitive information. The app processes locally only, but be careful not to include in screen shares/screenshots.
+Until a Codex release and npm package are published, use the source instructions
+above. An existing npm `latest` version may still be the previous application.
+After release, use `npx @j-ho/agents-office@0.2.0`; `--version` selects the GitHub
+release tag and `--force` refreshes its cache.
 
-Related settings can be found in [`src-tauri/capabilities/default.json`](./src-tauri/capabilities/default.json).
-
-## Architecture Overview
-
-```mermaid
-flowchart LR
-  claudeHome[claudeHomeDir] --> debugDir[debugDir]
-  claudeHome --> projectsDir[projectsDir]
-  watcher[logWatcherRust] -->|"emit(app-event)"| frontend[reactPxiUi]
-  frontend --> stores[zustandStores]
-```
-
-### Event Flow (Summary)
-- Rust watcher detects file changes and parses log lines
-- Sends events to frontend via `app-event`
-  - `LogEntry`: Add inbox log entry
-  - `AgentUpdate`: Update agent status/task display
-  - `WatcherStatus`: Update top status (Watching/Idle)
-
-## Release Asset Specification (for npx execution)
-`npx @j-ho/agents-office` downloads macOS build artifacts from GitHub Releases (`awesomelon/agents-office`).
-
-- **Tag convention**: `vX.Y.Z` (e.g., `v0.1.2`)
-- **Recommended asset name**: `Agents-Office-macos.zip`
-  - The zip should contain `Agents Office.app/` bundle inside
-- (Optional) Integrity verification:
-  - Upload `Agents-Office-macos.zip.sha256` or `checksums.txt` alongside for CLI sha256 verification
-
-## License
-MIT
+MIT license.

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Agent, AgentStatus } from "../types";
+import { isDeskId } from "../config/toolMapping";
 
 export interface DocumentTransfer {
   id: string;
@@ -13,7 +14,11 @@ const MAX_DOCUMENT_TRANSFERS = 8;
 let documentTransferSeq = 0;
 
 // Visual effects
-export type EffectKind = "searchPulse" | "typeParticles" | "runSpark" | "errorBurst";
+export type EffectKind =
+  | "searchPulse"
+  | "typeParticles"
+  | "runSpark"
+  | "errorBurst";
 
 export interface VisualEffect {
   id: string;
@@ -36,7 +41,11 @@ export interface BatchUpdateData {
   agentList: Agent[];
   vacations: Record<string, boolean>;
   errors: Record<string, boolean>;
-  newDocumentTransfers: Array<{ from: string; to: string; toolName?: string | null }>;
+  newDocumentTransfers: Array<{
+    from: string;
+    to: string;
+    toolName?: string | null;
+  }>;
   lastActiveId: string | null;
   moodEvents?: { toolCalls: string[]; errors: string[] };
 }
@@ -61,7 +70,11 @@ interface AgentState {
   setAgentVacationsBatch: (vacations: Record<string, boolean>) => void;
   setAgentError: (id: string, hasError: boolean) => void;
   setAgentErrorsBatch: (errors: Record<string, boolean>) => void;
-  startDocumentTransfer: (fromAgentId: string, toAgentId: string, toolName?: string | null) => void;
+  startDocumentTransfer: (
+    fromAgentId: string,
+    toAgentId: string,
+    toolName?: string | null,
+  ) => void;
   removeDocumentTransfer: (id: string) => void;
   clearDocumentTransfers: () => void;
   setLastActiveAgent: (id: string) => void;
@@ -72,7 +85,12 @@ interface AgentState {
   recordError: (id: string) => void;
   // Visual effects
   effects: VisualEffect[];
-  enqueueEffect: (agentId: string, kind: EffectKind, color: number, durationMs?: number) => void;
+  enqueueEffect: (
+    agentId: string,
+    kind: EffectKind,
+    color: number,
+    durationMs?: number,
+  ) => void;
   removeExpiredEffects: (now: number) => void;
 }
 
@@ -88,12 +106,23 @@ export const useAgentStore = create<AgentState>((set) => ({
   effects: [],
 
   initializeAgents: () => {
-    // Keep empty by default. Agents will appear only when the backend emits an update.
-    // (We still keep the function for compatibility.)
-    set({ agents: {}, vacationById: {}, errorById: {}, documentTransfers: [], lastActiveAgentId: null, lastTaskUpdateById: {}, lastToolCallAtById: {}, lastErrorAtById: {} });
+    for (const key of Object.keys(lastEffectTimeByKey))
+      delete lastEffectTimeByKey[key];
+    set({
+      agents: {},
+      vacationById: {},
+      errorById: {},
+      documentTransfers: [],
+      lastActiveAgentId: null,
+      lastTaskUpdateById: {},
+      lastToolCallAtById: {},
+      lastErrorAtById: {},
+      effects: [],
+    });
   },
 
   updateAgent: (agent) => {
+    if (!isDeskId(agent.id) || agent.id !== agent.agent_type) return;
     set((state) => {
       // If we haven't seen this agent before and it's idle, ignore it.
       // This prevents agents from appearing in the office until they start working.
@@ -102,16 +131,18 @@ export const useAgentStore = create<AgentState>((set) => ({
       }
 
       const now = Date.now();
-      const taskChanged = state.agents[agent.id]?.current_task !== agent.current_task;
+      const taskChanged =
+        state.agents[agent.id]?.current_task !== agent.current_task;
 
       return {
         agents: {
           ...state.agents,
           [agent.id]: agent,
         },
-        lastTaskUpdateById: taskChanged && agent.current_task
-          ? { ...state.lastTaskUpdateById, [agent.id]: now }
-          : state.lastTaskUpdateById,
+        lastTaskUpdateById:
+          taskChanged && agent.current_task
+            ? { ...state.lastTaskUpdateById, [agent.id]: now }
+            : state.lastTaskUpdateById,
       };
     });
   },
@@ -124,12 +155,14 @@ export const useAgentStore = create<AgentState>((set) => ({
       const newLastTaskUpdate = { ...state.lastTaskUpdateById };
 
       for (const agent of agentList) {
+        if (!isDeskId(agent.id) || agent.id !== agent.agent_type) continue;
         // If we haven't seen this agent before and it's idle, skip it
         if (!newAgents[agent.id] && agent.status === "idle") {
           continue;
         }
 
-        const taskChanged = newAgents[agent.id]?.current_task !== agent.current_task;
+        const taskChanged =
+          newAgents[agent.id]?.current_task !== agent.current_task;
         newAgents[agent.id] = agent;
 
         if (taskChanged && agent.current_task) {
@@ -144,7 +177,14 @@ export const useAgentStore = create<AgentState>((set) => ({
     });
   },
 
-  processBatchUpdate: ({ agentList, vacations, errors, newDocumentTransfers, lastActiveId, moodEvents }) => {
+  processBatchUpdate: ({
+    agentList,
+    vacations,
+    errors,
+    newDocumentTransfers,
+    lastActiveId,
+    moodEvents,
+  }) => {
     set((state) => {
       const now = Date.now();
       const startedAt = performance.now();
@@ -152,10 +192,12 @@ export const useAgentStore = create<AgentState>((set) => ({
       const newLastTaskUpdate = { ...state.lastTaskUpdateById };
 
       for (const agent of agentList) {
+        if (!isDeskId(agent.id) || agent.id !== agent.agent_type) continue;
         if (!newAgents[agent.id] && agent.status === "idle") {
           continue;
         }
-        const taskChanged = newAgents[agent.id]?.current_task !== agent.current_task;
+        const taskChanged =
+          newAgents[agent.id]?.current_task !== agent.current_task;
         newAgents[agent.id] = agent;
         if (taskChanged && agent.current_task) {
           newLastTaskUpdate[agent.id] = now;
@@ -195,10 +237,16 @@ export const useAgentStore = create<AgentState>((set) => ({
       return {
         agents: newAgents,
         lastTaskUpdateById: newLastTaskUpdate,
-        vacationById: hasVacationUpdates ? { ...state.vacationById, ...vacations } : state.vacationById,
-        errorById: hasErrorUpdates ? { ...state.errorById, ...errors } : state.errorById,
+        vacationById: hasVacationUpdates
+          ? { ...state.vacationById, ...vacations }
+          : state.vacationById,
+        errorById: hasErrorUpdates
+          ? { ...state.errorById, ...errors }
+          : state.errorById,
         documentTransfers: hasNewTransfers
-          ? [...state.documentTransfers, ...newTransfers].slice(-MAX_DOCUMENT_TRANSFERS)
+          ? [...state.documentTransfers, ...newTransfers].slice(
+              -MAX_DOCUMENT_TRANSFERS,
+            )
           : state.documentTransfers,
         lastActiveAgentId: lastActiveId ?? state.lastActiveAgentId,
         lastToolCallAtById: newToolCallAt,
@@ -307,7 +355,9 @@ export const useAgentStore = create<AgentState>((set) => ({
       const now = Date.now();
       let changed = false;
       const updatedAgents: Record<string, Agent> = { ...state.agents };
-      const updatedLastTaskUpdate: Record<string, number> = { ...state.lastTaskUpdateById };
+      const updatedLastTaskUpdate: Record<string, number> = {
+        ...state.lastTaskUpdateById,
+      };
 
       for (const [id, lastUpdate] of Object.entries(state.lastTaskUpdateById)) {
         if (now - lastUpdate > timeoutMs) {
@@ -343,7 +393,10 @@ export const useAgentStore = create<AgentState>((set) => ({
     const key = `${agentId}-${kind}`;
 
     // Debounce: skip if same agent+kind was triggered recently
-    if (lastEffectTimeByKey[key] && now - lastEffectTimeByKey[key] < EFFECT_DEBOUNCE_MS) {
+    if (
+      lastEffectTimeByKey[key] &&
+      now - lastEffectTimeByKey[key] < EFFECT_DEBOUNCE_MS
+    ) {
       return;
     }
     lastEffectTimeByKey[key] = now;
@@ -365,8 +418,12 @@ export const useAgentStore = create<AgentState>((set) => ({
 
   removeExpiredEffects: (now) => {
     set((state) => {
-      const active = state.effects.filter((e) => now - e.startedAt < e.durationMs);
-      return active.length !== state.effects.length ? { effects: active } : state;
+      const active = state.effects.filter(
+        (e) => now - e.startedAt < e.durationMs,
+      );
+      return active.length !== state.effects.length
+        ? { effects: active }
+        : state;
     });
   },
 }));

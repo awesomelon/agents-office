@@ -6,7 +6,8 @@ import type { LogEntry } from "../types";
  * @returns "now", "5s", "2m" 형식의 문자열
  */
 export function formatRelativeTime(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
+  if (!Number.isFinite(ms)) return "unknown time";
+  const seconds = Math.max(0, Math.floor(ms / 1000));
 
   if (seconds < 3) return "now";
   if (seconds < 60) return `${seconds}s`;
@@ -35,6 +36,12 @@ export function formatTimelineEntry(entry: LogEntry): string {
       return "Session Start";
     case "session_end":
       return "Session End";
+    case "task_start":
+      return "Turn started";
+    case "task_complete":
+      return "Turn completed";
+    case "turn_aborted":
+      return "Turn interrupted";
     case "error":
       return "Error";
     case "todo_update":
@@ -55,7 +62,6 @@ export function formatTimelineEntry(entry: LogEntry): string {
  * @returns Parsed Date object
  */
 export function parseTimestamp(timestamp: string): Date {
-  // Handle invalid timestamps gracefully
-  const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? new Date() : date;
+  // Preserve invalid timestamps so the UI can show an unknown time honestly.
+  return new Date(timestamp);
 }

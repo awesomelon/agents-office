@@ -1,82 +1,213 @@
+import { useMemo, useState } from "react";
 import { useLogStore, useSettingsStore } from "../../store";
+import { logKey } from "../../store/logStore";
+import { deskForEntry } from "../../config/toolMapping";
 import type { LogEntry, LogEntryType } from "../../types";
 
-const TYPE_COLORS: Record<LogEntryType, string> = {
-  tool_call: "text-blue-400",
-  tool_result: "text-green-400",
-  message: "text-gray-300",
-  error: "text-red-400",
-  todo_update: "text-purple-400",
-  session_start: "text-yellow-400",
-  session_end: "text-yellow-400",
+export const EVENT_LABELS: Record<LogEntryType, string> = {
+  tool_call: "Tool call",
+  tool_result: "Tool result",
+  message: "Message",
+  error: "Error",
+  todo_update: "Plan update",
+  session_start: "Session opened",
+  session_end: "Session ended",
+  task_start: "Turn started",
+  task_complete: "Turn completed",
+  turn_aborted: "Turn interrupted",
 };
 
-const TYPE_ICONS: Record<LogEntryType, string> = {
-  tool_call: "->",
-  tool_result: "<-",
-  message: "...",
-  error: "!!",
-  todo_update: "[]",
-  session_start: ">>",
-  session_end: "<<",
-};
+export function filterEntries(
+  logs: LogEntry[],
+  query: string,
+  type: string,
+  session: string,
+): LogEntry[] {
+  const term = query.trim().toLowerCase();
+  return logs.filter(
+    (entry) =>
+      (type === "all" || entry.entry_type === type) &&
+      (session === "all" || (entry.session_id ?? entry.agent_id) === session) &&
+      (!term ||
+        [
+          entry.content,
+          entry.tool_name,
+          entry.session_id,
+          entry.agent_id,
+          entry.call_id,
+          deskForEntry(entry),
+          EVENT_LABELS[entry.entry_type],
+        ].some((value) => value?.toLowerCase().includes(term))),
+  );
+}
 
 function LogEntryItem({ entry }: { entry: LogEntry }) {
-  const colorClass = TYPE_COLORS[entry.entry_type] || "text-gray-300";
-  const icon = TYPE_ICONS[entry.entry_type] || "?";
-
+  const timestamp = new Date(entry.timestamp);
+  const role = deskForEntry(entry);
   return (
-    <div className="px-3 py-2 border-b border-office-wall/50 hover:bg-office-wall/20 transition-colors">
-      <div className="flex items-center gap-2 text-xs">
-        <span className={`font-mono ${colorClass}`}>{icon}</span>
-        {entry.tool_name && (
-          <span className="px-1.5 py-0.5 bg-office-wall rounded text-white">
-            {entry.tool_name}
+    <details
+      className={`log-entry ${entry.entry_type === "error" ? "log-error" : ""}`}
+    >
+      <summary>
+        <div className="log-meta">
+          <span className={`event-type event-${entry.entry_type}`}>
+            {EVENT_LABELS[entry.entry_type]}
           </span>
-        )}
-        {entry.timestamp && (
-          <span className="text-gray-500 ml-auto">
-            {entry.timestamp.slice(11, 19)}
-          </span>
-        )}
+          <time dateTime={entry.timestamp}>
+            {Number.isNaN(timestamp.getTime())
+              ? "Unknown time"
+              : timestamp.toLocaleTimeString([], { hour12: false })}
+          </time>
+        </div>
+        <strong>{entry.tool_name ?? EVENT_LABELS[entry.entry_type]}</strong>
+        <p className="log-preview">{entry.content}</p>
+        <span className="details-hint">View event details</span>
+      </summary>
+      <div className="log-details">
+        <p>{entry.content}</p>
+        <dl>
+          <dt>Observed at</dt>
+          <dd>{entry.timestamp}</dd>
+          <dt>Session</dt>
+          <dd>{entry.session_id ?? entry.agent_id ?? "Not provided"}</dd>
+          {entry.call_id && (
+            <>
+              <dt>Call ID</dt>
+              <dd>{entry.call_id}</dd>
+            </>
+          )}
+          {role && (
+            <>
+              <dt>Illustrative role</dt>
+              <dd>{role}</dd>
+            </>
+          )}
+        </dl>
       </div>
-      <p className="mt-1 text-xs text-gray-400 truncate">{entry.content}</p>
-    </div>
+    </details>
   );
 }
 
 export function Inbox() {
-  const { logs, clearLogs } = useLogStore();
-  const { showInbox } = useSettingsStore();
-
-  if (!showInbox) {
-    return null;
-  }
-
+  const { logs, clearLogs, maxLogs } = useLogStore();
+  const showInbox = useSettingsStore((state) => state.showInbox);
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("all");
+  const [session, setSession] = useState("all");
+  const sessions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          logs
+            .map((entry) => entry.session_id ?? entry.agent_id)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ),
+    [logs],
+  );
+  const visible = useMemo(
+    () => filterEntries(logs, query, type, session),
+    [logs, query, type, session],
+  );
+  if (!showInbox) return null;
   return (
-    <aside className="w-80 bg-inbox-bg border-l border-office-wall flex flex-col">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-office-wall">
-        <h2 className="text-xs font-pixel text-white">Inbox</h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{logs.length} logs</span>
-          <button
-            onClick={clearLogs}
-            className="text-xs text-gray-500 hover:text-white transition-colors"
-          >
-            Clear
-          </button>
+    <aside className="inbox" id="event-inbox" aria-labelledby="inbox-title">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">OBSERVATIONS</span>
+          <h2 id="inbox-title">Event inbox</h2>
         </div>
+        <button
+          className="quiet-button"
+          onClick={clearLogs}
+          disabled={!logs.length}
+          title="Clear this view only; local Codex files are unchanged"
+        >
+          Clear view
+        </button>
       </div>
-
-      <div className="flex-1 overflow-y-auto">
-        {logs.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-500 text-xs">
-            No logs yet...
-          </div>
+      <div className="inbox-filters">
+        <label htmlFor="event-search">Search events</label>
+        <input
+          id="event-search"
+          type="search"
+          placeholder="Tool, role, session, or summary"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <div className="filter-row">
+          <label>
+            Event type
+            <select
+              value={type}
+              onChange={(event) => setType(event.target.value)}
+            >
+              <option value="all">All event types</option>
+              {Object.entries(EVENT_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Session
+            <select
+              value={session}
+              onChange={(event) => setSession(event.target.value)}
+            >
+              <option value="all">All sessions</option>
+              {session !== "all" && !sessions.includes(session) && (
+                <option value={session}>
+                  {session.slice(0, 16)} (no events)
+                </option>
+              )}
+              {sessions.map((id) => (
+                <option key={id} value={id}>
+                  {id.slice(0, 16)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="muted" role="status">
+          {visible.length} shown · newest first · keeps {maxLogs} events
+        </p>
+      </div>
+      <div className="inbox-events">
+        {visible.length ? (
+          visible.map((entry) => (
+            <LogEntryItem key={logKey(entry)} entry={entry} />
+          ))
         ) : (
-          logs.map((log, index) => <LogEntryItem key={index} entry={log} />)
+          <div className="empty-inbox">
+            <span aria-hidden="true">◎</span>
+            <h3>
+              {logs.length ? "No matching events" : "Ready when Codex is"}
+            </h3>
+            <p>
+              {logs.length
+                ? "Try another search or reset the filters."
+                : "New tool activity and turn boundaries will appear here."}
+            </p>
+            {(query || type !== "all" || session !== "all") && (
+              <button
+                onClick={() => {
+                  setQuery("");
+                  setType("all");
+                  setSession("all");
+                }}
+              >
+                Reset filters
+              </button>
+            )}
+          </div>
         )}
       </div>
+      <p className="inbox-note">
+        Metadata summaries only. Prompts, commands, source code, and tool output
+        stay hidden.
+      </p>
     </aside>
   );
 }

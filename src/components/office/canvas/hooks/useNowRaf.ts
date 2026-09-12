@@ -8,65 +8,56 @@ export function useNowRaf(args: {
   motionById: Record<string, AgentMotion>;
   effects: VisualEffect[];
   removeExpiredEffects: (now: number) => void;
+  enabled: boolean;
+  reducedMotion: boolean;
 }): void {
-  const { nowRef, documentTransfers, motionById, effects, removeExpiredEffects } = args;
+  const { nowRef, enabled, reducedMotion } = args;
   const [, forceUpdate] = useState(0);
-
-  // Mirror frequently-changing state into refs so the RAF effect can be installed once.
-  const documentTransfersRef = useRef(documentTransfers);
-  const motionByIdRef = useRef(motionById);
-  const effectsRef = useRef(effects);
-  const removeExpiredEffectsRef = useRef(removeExpiredEffects);
+  const stateRef = useRef(args);
+  useEffect(() => {
+    stateRef.current = args;
+  });
 
   useEffect(() => {
-    documentTransfersRef.current = documentTransfers;
-  }, [documentTransfers]);
-  useEffect(() => {
-    motionByIdRef.current = motionById;
-  }, [motionById]);
-  useEffect(() => {
-    effectsRef.current = effects;
-  }, [effects]);
-  useEffect(() => {
-    removeExpiredEffectsRef.current = removeExpiredEffects;
-  }, [removeExpiredEffects]);
-
-  // Drive animations via requestAnimationFrame - only update when animations active
-  useEffect(() => {
+    if (!enabled) return;
     let raf = 0;
-    let lastUpdateTime = performance.now();
-    let lastEffectPruneTime = performance.now();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let lastEffectPruneTime = 0;
 
-    const tick = (t: number) => {
-      nowRef.current = t;
-
-      // Prune expired effects periodically (~500ms)
-      if (t - lastEffectPruneTime > 500) {
-        lastEffectPruneTime = t;
-        removeExpiredEffectsRef.current(t);
+    const tick = (now: number) => {
+      nowRef.current = now;
+      const { documentTransfers, motionById, effects, removeExpiredEffects } =
+        stateRef.current;
+      if (now - lastEffectPruneTime >= 500) {
+        lastEffectPruneTime = now;
+        removeExpiredEffects(now);
       }
+      forceUpdate((n) => n + 1);
 
-      // Check if any animations are active
-      const hasActiveDocTransfers = documentTransfersRef.current.length > 0;
-      const motionSnapshot = motionByIdRef.current;
-      const hasEnteringMotions = Object.values(motionSnapshot).some((m) => m.phase === "entering");
-      const hasWalkingMotions = Object.values(motionSnapshot).some(
-        (m) => m.phase === "walking" || m.phase === "returning"
+      const moving = Object.values(motionById).some(
+        (motion) =>
+          motion.phase === "entering" ||
+          motion.phase === "walking" ||
+          motion.phase === "returning",
       );
-      const hasActiveEffects = effectsRef.current.length > 0;
-      const needsUpdate = hasActiveDocTransfers || hasEnteringMotions || hasWalkingMotions || hasActiveEffects;
-
-      // Adaptive throttling: 60fps during animation, 5fps idle
-      const targetInterval = needsUpdate ? 16 : 200;
-      if (t - lastUpdateTime > targetInterval) {
-        lastUpdateTime = t;
-        forceUpdate((n) => n + 1);
+      if (
+        !reducedMotion &&
+        (documentTransfers.length > 0 || effects.length > 0 || moving)
+      ) {
+        raf = requestAnimationFrame(tick);
+      } else {
+        // No 60fps polling when the scene is idle. Wall-clock expiry continues
+        // even with reduced motion, so transfers/effects cannot become stuck.
+        timeout = setTimeout(
+          () => tick(performance.now()),
+          reducedMotion ? 1000 : 200,
+        );
       }
-
-      raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [nowRef]);
+    tick(performance.now());
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timeout);
+    };
+  }, [enabled, nowRef, reducedMotion]);
 }
-

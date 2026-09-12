@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAnimationPreferences } from "./useAnimationPreferences";
 
 /**
  * Custom hook for frame-based animations with automatic cleanup.
@@ -12,19 +13,20 @@ import { useEffect, useState } from "react";
 export function useFrameAnimation(
   frameCount: number,
   intervalMs: number,
-  enabled: boolean = true
+  enabled: boolean = true,
 ): number {
   const [frame, setFrame] = useState(0);
+  const { reducedMotion, visible } = useAnimationPreferences();
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || reducedMotion || !visible) return;
 
     const interval = setInterval(() => {
       setFrame((f) => (f + 1) % frameCount);
     }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [enabled, frameCount, intervalMs]);
+  }, [enabled, frameCount, intervalMs, reducedMotion, visible]);
 
-  return frame;
+  return reducedMotion ? 0 : frame;
 }

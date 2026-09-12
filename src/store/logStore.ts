@@ -1,8 +1,40 @@
 import { create } from "zustand";
-import type { LogEntry, TimelineEvent } from "../types";
-import { formatRelativeTime, formatTimelineEntry, parseTimestamp } from "../utils/timelineUtils";
+import type { LogEntry, TimelineEvent, WatcherStatus } from "../types";
+import {
+  formatRelativeTime,
+  formatTimelineEntry,
+  parseTimestamp,
+} from "../utils/timelineUtils";
 
-const MAX_TIMELINE_EVENTS = 30;
+export function logKey(entry: LogEntry): string {
+  return (
+    entry.id ??
+    JSON.stringify([
+      entry.timestamp,
+      entry.session_id,
+      entry.call_id,
+      entry.entry_type,
+      entry.tool_name,
+      entry.content,
+    ])
+  );
+}
+
+export function mergeLogs(
+  current: LogEntry[],
+  entries: LogEntry[],
+  limit: number,
+): LogEntry[] {
+  const seen = new Set<string>();
+  return [...entries.slice().reverse(), ...current]
+    .filter((entry) => {
+      const key = logKey(entry);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
 
 interface LogState {
   logs: LogEntry[];
@@ -10,65 +42,66 @@ interface LogState {
   sessionId: string | null;
   watcherActive: boolean;
   watcherPath: string | null;
+  watcherState: WatcherStatus["state"];
+  watcherMessage: string;
+  connectionError: string | null;
+  reconnectKey: number;
   addLog: (entry: LogEntry) => void;
   addLogsBatch: (entries: LogEntry[]) => void;
+  replaceLogs: (entries: LogEntry[]) => void;
   setSessionId: (id: string | null) => void;
-  setWatcherStatus: (active: boolean, path: string) => void;
+  setWatcherStatus: (status: WatcherStatus) => void;
+  setConnectionError: (message: string | null) => void;
+  reconnect: () => void;
   clearLogs: () => void;
   getTimelineEvents: () => TimelineEvent[];
 }
 
 export const useLogStore = create<LogState>((set, get) => ({
   logs: [],
-  maxLogs: 100,
+  maxLogs: 500,
   sessionId: null,
   watcherActive: false,
   watcherPath: null,
-
-  addLog: (entry) => {
-    set((state) => {
-      const newLogs = [entry, ...state.logs].slice(0, state.maxLogs);
-      return { logs: newLogs };
-    });
-  },
-
-  addLogsBatch: (entries) => {
-    if (entries.length === 0) return;
+  watcherState: "starting",
+  watcherMessage: "Connecting to the local observer…",
+  connectionError: null,
+  reconnectKey: 0,
+  addLog: (entry) =>
+    set((state) => ({ logs: mergeLogs(state.logs, [entry], state.maxLogs) })),
+  addLogsBatch: (entries) =>
+    set((state) => ({ logs: mergeLogs(state.logs, entries, state.maxLogs) })),
+  replaceLogs: (entries) =>
+    set((state) => ({ logs: mergeLogs([], entries, state.maxLogs) })),
+  setSessionId: (sessionId) => set({ sessionId }),
+  setWatcherStatus: (status) =>
+    set({
+      watcherActive: status.active,
+      watcherPath: status.path,
+      watcherState: status.state,
+      watcherMessage: status.message,
+    }),
+  setConnectionError: (connectionError) => set({ connectionError }),
+  reconnect: () =>
     set((state) => ({
-      // Reverse to maintain chronological order (newest first)
-      logs: [...entries.slice().reverse(), ...state.logs].slice(0, state.maxLogs),
-    }));
-  },
-
-  setSessionId: (id) => {
-    set({ sessionId: id });
-  },
-
-  setWatcherStatus: (active, path) => {
-    set({ watcherActive: active, watcherPath: path });
-  },
-
-  clearLogs: () => {
-    set({ logs: [] });
-  },
-
-  getTimelineEvents: () => {
-    const { logs } = get();
-    const now = Date.now();
-
-    return logs.slice(0, MAX_TIMELINE_EVENTS).map((log, index) => {
-      const timestamp = parseTimestamp(log.timestamp);
-      const elapsed = now - timestamp.getTime();
-
-      return {
-        id: `${log.timestamp}-${index}`,
-        timestamp,
+      reconnectKey: state.reconnectKey + 1,
+      connectionError: null,
+      watcherState: "starting",
+      watcherMessage: "Reconnecting…",
+    })),
+  clearLogs: () => set({ logs: [] }),
+  getTimelineEvents: () =>
+    get()
+      .logs.slice(0, 20)
+      .map((log) => ({
+        id: logKey(log),
+        timestamp: parseTimestamp(log.timestamp),
         entry_type: log.entry_type,
         agent_id: log.agent_id,
         tool_name: log.tool_name,
         displayText: formatTimelineEntry(log),
-        relativeTime: formatRelativeTime(elapsed),
-      };
-    });
-  },
+        relativeTime: formatRelativeTime(
+          Math.max(0, Date.now() - parseTimestamp(log.timestamp).getTime()),
+        ),
+      })),
 }));

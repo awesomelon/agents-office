@@ -29,9 +29,19 @@ interface AgentSpriteProps {
   motion?: AgentMotion;
   mood: AgentMood;
   now: number;
+  reducedMotion: boolean;
 }
 
-export function AgentSprite({ agent, x, y, alpha, motion, mood, now }: AgentSpriteProps): JSX.Element {
+export function AgentSprite({
+  agent,
+  x,
+  y,
+  alpha,
+  motion,
+  mood,
+  now,
+  reducedMotion,
+}: AgentSpriteProps): JSX.Element {
   const color = AGENT_COLORS[agent.agent_type];
   const statusColor = STATUS_COLORS[agent.status];
   const hairColor = HAIR_COLORS[agent.agent_type];
@@ -41,17 +51,21 @@ export function AgentSprite({ agent, x, y, alpha, motion, mood, now }: AgentSpri
   const [isBlinking, setIsBlinking] = useState(false);
 
   // Walking state
-  const isWalking = motion?.phase === "walking" || motion?.phase === "returning";
-  const walkDirection = isWalking && motion ? (motion.to.x < motion.from.x ? -1 : 1) : 1;
+  const isWalking =
+    !reducedMotion &&
+    (motion?.phase === "walking" || motion?.phase === "returning");
+  const walkDirection =
+    isWalking && motion ? (motion.to.x < motion.from.x ? -1 : 1) : 1;
 
   // Calculate lean angle for curved walking
   const leanAngle = useMemo(() => {
-    if (!motion) return 0;
+    if (!motion || reducedMotion) return 0;
     return calculateMotionLean(motion, now);
-  }, [motion, now]);
+  }, [motion, now, reducedMotion]);
 
   // Eye blink effect - uses immutable update pattern
   useEffect(() => {
+    if (reducedMotion) return;
     const prevState = blinkRef.current;
     const nextState = updateBlinkState(prevState, now);
 
@@ -62,14 +76,16 @@ export function AgentSprite({ agent, x, y, alpha, motion, mood, now }: AgentSpri
         setIsBlinking(nextState.isBlinking);
       }
     }
-  }, [now]);
+  }, [now, reducedMotion]);
 
   // Calculate continuous animation phase (0-1)
   const animationPhase = useMemo(() => {
-    if (agent.status === "idle" && !isWalking) return 0;
-    const cycleDuration = isWalking ? WALK_LIMB_CYCLE_DURATION_MS : LIMB_CYCLE_DURATION_MS;
+    if (reducedMotion || (agent.status === "idle" && !isWalking)) return 0;
+    const cycleDuration = isWalking
+      ? WALK_LIMB_CYCLE_DURATION_MS
+      : LIMB_CYCLE_DURATION_MS;
     return (now % cycleDuration) / cycleDuration;
-  }, [agent.status, isWalking, now]);
+  }, [agent.status, isWalking, now, reducedMotion]);
 
   // Continuous bounce (smooth sinusoidal)
   const bounce = useMemo(() => {
@@ -86,21 +102,37 @@ export function AgentSprite({ agent, x, y, alpha, motion, mood, now }: AgentSpri
     });
   }, [agent.status, agent.current_task]);
 
-  const draw = useCallback((g: PixiGraphics) => {
-    drawAgent(g, {
+  const draw = useCallback(
+    (g: PixiGraphics) => {
+      drawAgent(g, {
+        bounce,
+        color,
+        hairColor,
+        statusColor,
+        status: agent.status,
+        animationPhase,
+        isWalking,
+        walkDirection,
+        mood,
+        isBlinking: !reducedMotion && isBlinking,
+        leanAngle,
+      });
+    },
+    [
       bounce,
       color,
       hairColor,
       statusColor,
-      status: agent.status,
+      agent.status,
       animationPhase,
       isWalking,
       walkDirection,
       mood,
       isBlinking,
       leanAngle,
-    });
-  }, [bounce, color, hairColor, statusColor, agent.status, animationPhase, isWalking, walkDirection, mood, isBlinking, leanAngle]);
+      reducedMotion,
+    ],
+  );
 
   const showBubble = agent.status !== "idle" && message;
 
@@ -121,54 +153,62 @@ interface SpeechBubbleProps {
 }
 
 function SpeechBubble({ text }: SpeechBubbleProps): JSX.Element {
-  const displayText = text.length > SPEECH_BUBBLE_MAX_CHARS
-    ? text.slice(0, SPEECH_BUBBLE_TRUNCATE_AT) + "..."
-    : text;
+  const displayText =
+    text.length > SPEECH_BUBBLE_MAX_CHARS
+      ? text.slice(0, SPEECH_BUBBLE_TRUNCATE_AT) + "..."
+      : text;
 
   const bubbleWidth = Math.max(80, Math.min(160, displayText.length * 5 + 20));
   const halfWidth = bubbleWidth / 2;
 
-  const draw = useCallback((g: PixiGraphics) => {
-    g.clear();
+  const draw = useCallback(
+    (g: PixiGraphics) => {
+      g.clear();
 
-    // Shadow
-    g.beginFill(0x000000, 0.15);
-    g.drawRoundedRect(-halfWidth + 2, -48, bubbleWidth, 32, 8);
-    g.endFill();
+      // Shadow
+      g.beginFill(0x000000, 0.15);
+      g.drawRoundedRect(-halfWidth + 2, -48, bubbleWidth, 32, 8);
+      g.endFill();
 
-    // Background
-    g.beginFill(0xffffff);
-    g.drawRoundedRect(-halfWidth, -50, bubbleWidth, 32, 8);
-    g.endFill();
+      // Background
+      g.beginFill(0xffffff);
+      g.drawRoundedRect(-halfWidth, -50, bubbleWidth, 32, 8);
+      g.endFill();
 
-    // Border
-    g.lineStyle(1.5, 0x4a4a6a, 0.5);
-    g.drawRoundedRect(-halfWidth, -50, bubbleWidth, 32, 8);
+      // Border
+      g.lineStyle(1.5, 0x4a4a6a, 0.5);
+      g.drawRoundedRect(-halfWidth, -50, bubbleWidth, 32, 8);
 
-    // Tail
-    g.lineStyle(0);
-    g.beginFill(0xffffff);
-    g.moveTo(-6, -18);
-    g.lineTo(6, -18);
-    g.lineTo(0, -8);
-    g.closePath();
-    g.endFill();
+      // Tail
+      g.lineStyle(0);
+      g.beginFill(0xffffff);
+      g.moveTo(-6, -18);
+      g.lineTo(6, -18);
+      g.lineTo(0, -8);
+      g.closePath();
+      g.endFill();
 
-    g.lineStyle(1.5, 0x4a4a6a, 0.5);
-    g.moveTo(-6, -18);
-    g.lineTo(0, -8);
-    g.lineTo(6, -18);
-  }, [bubbleWidth, halfWidth]);
+      g.lineStyle(1.5, 0x4a4a6a, 0.5);
+      g.moveTo(-6, -18);
+      g.lineTo(0, -8);
+      g.lineTo(6, -18);
+    },
+    [bubbleWidth, halfWidth],
+  );
 
-  const textStyle = useMemo(() => new TextStyle({
-    fontFamily: '"Press Start 2P", monospace',
-    fontSize: 6,
-    fill: 0x2d2d4a,
-    wordWrap: true,
-    wordWrapWidth: bubbleWidth - 16,
-    align: "center",
-    lineHeight: 10,
-  }), [bubbleWidth]);
+  const textStyle = useMemo(
+    () =>
+      new TextStyle({
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: 6,
+        fill: 0x2d2d4a,
+        wordWrap: true,
+        wordWrapWidth: bubbleWidth - 16,
+        align: "center",
+        lineHeight: 10,
+      }),
+    [bubbleWidth],
+  );
 
   return (
     <Container>

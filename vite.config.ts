@@ -29,11 +29,7 @@ function getManualChunks(): Record<string, string[]> {
     // React (~140 kB)
     react: ["react", "react-dom"],
     // Tauri APIs (~30 kB)
-    tauri: [
-      "@tauri-apps/api",
-      "@tauri-apps/plugin-fs",
-      "@tauri-apps/plugin-shell",
-    ],
+    tauri: ["@tauri-apps/api"],
     // 상태 관리 (~10 kB)
     vendor: ["zustand"],
   };
