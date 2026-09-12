@@ -11,12 +11,11 @@ export function ObserverPanel() {
         className="observer-panel demo-panel"
         aria-label="Browser demo controls"
       >
-        <div>
-          <span className="eyebrow">INTERACTIVE PREVIEW</span>
-          <h2>A tiny office. A clear view of Codex.</h2>
+        <div className="observer-copy">
+          <span className="eyebrow">TAKE A LOOK AROUND</span>
+          <h2>See the studio in motion.</h2>
           <p>
-            Synthetic events only. The desktop app observes local Codex session
-            logs; this browser cannot read them.
+            Synthetic events only. Live activity stays in the desktop app.
           </p>
         </div>
         <div className="demo-controls">
@@ -65,7 +64,7 @@ export function ObserverPanel() {
       className={`observer-panel ${state.connectionError || state.watcherState === "error" ? "observer-error" : ""}`}
       aria-label="Local observer status"
     >
-      <div>
+      <div className="observer-copy">
         <span className="eyebrow">LOCAL · READ ONLY</span>
         <h2>{title}</h2>
         <p role="status">{state.watcherMessage}</p>
@@ -82,9 +81,8 @@ export function ObserverPanel() {
         )}
         {(needsSetup || !state.logs.length) && (
           <p className="setup-hint">
-            Open Codex CLI or the Codex app, then start a new turn. This
-            observer follows new events after launch. A custom CODEX_HOME is
-            supported; restart this app after changing it.
+            Start a turn in Codex CLI or the Codex app to see new activity.
+            Using a custom CODEX_HOME? Restart this app after changing it.
           </p>
         )}
       </div>
