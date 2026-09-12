@@ -4,10 +4,14 @@ A local desktop companion that brings **Codex activity** into a warm, illustrate
 Explore eight workflow spaces, select a role to inspect its recent events, or follow
 new activity automatically. A searchable event inbox sits alongside the office.
 
-![The Codex studio illustration: six desks, a resource library and a conversation lounge](public/assets/codex-studio.webp)
+![Eight 3D-rendered teammates in the Codex studio](docs/images/studio-agents-layout.webp)
 
-The image above is the studio artwork; live status labels and controls are rendered by the app.
-**Studio view** uses a lightweight 3D-rendered illustration with interactive activity zones.
+The image above is an asset placement preview using the app’s character coordinates,
+not a runtime screenshot. The app adds selection, status badges and motion.
+**Studio view** brings eight distinct 3D-rendered characters into the office, with
+matching portraits in the role directory and detail panel. Select a character to
+inspect its activity. Working, thinking and passing states have subtle motion;
+errors and rate limits have explicit labels. Motion controls and system preferences apply.
 **Pixel view** preserves the animated office. Studio view needs no WebGL; the pixel
 renderer loads when selected. Both views observe the same local activity.
 
@@ -105,6 +109,7 @@ CI checks frontend, launcher and pure Rust behavior, and builds the macOS deskto
 application. See [contributing](docs/CONTRIB.md), [operations](docs/RUNBOOK.md)
 and the [project review](docs/REVIEW.md) for scope and validation evidence.
 The [design review](docs/DESIGN_REVIEW.md) records the studio redesign and its validation limits.
+See the [3D character integration](docs/3D_AGENTS.md) for the applied designs and interaction details.
 
 ## macOS launcher
 

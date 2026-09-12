@@ -6,26 +6,6 @@
   min-width: 0;
   container-type: inline-size;
 }
-.studio-mobile-marker {
-  display: none;
-  position: absolute;
-  width: 23px;
-  height: 23px;
-  transform: translate(-50%, -50%);
-  place-items: center;
-  background: #14262bf0;
-  color: #f4f0e8;
-  border: 1px solid #f4f0e8;
-  border-radius: 50%;
-  font-size: 9px;
-  font-weight: 700;
-  box-shadow: 0 2px 8px #10211d55;
-}
-.studio-mobile-marker.is-selected {
-  background: #dceecd;
-  color: #183226;
-  border-width: 2px;
-}
 .studio-toolbar {
   display: flex;
   gap: 12px;
@@ -121,101 +101,12 @@
   width: 100%;
   aspect-ratio: 3 / 2;
 }
-.studio-artboard img {
+.studio-room-image {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
   user-select: none;
-}
-.studio-pin {
-  --pin-status: #9dafaa;
-  position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
-  transform: translate(-50%, -50%);
-  border: 0;
-  padding: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: #fff;
-  z-index: 2;
-}
-.studio-pin-number {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 2px solid #f4f0e8;
-  background: #14262bef;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-  box-shadow:
-    0 3px 12px #0a1d215c,
-    0 0 0 4px #14262b35;
-}
-.studio-pin-number::after {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  position: absolute;
-  right: 4px;
-  bottom: 7px;
-  background: var(--pin-status);
-  border: 1px solid #f4f0e8;
-}
-.studio-pin-label {
-  position: absolute;
-  bottom: 44px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 9px 13px;
-  border: 1px solid #efead480;
-  border-radius: 8px;
-  background: #14262bf5;
-  color: #fff;
-  box-shadow: 0 6px 16px #08171633;
-  font-size: 11px;
-  line-height: 1.25;
-  text-align: center;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.16s ease;
-}
-.studio-pin-label small {
-  display: block;
-  color: #d1dbd3;
-  font-size: 9px;
-  margin-top: 3px;
-  font-weight: 400;
-}
-.studio-pin.is-selected,
-.studio-pin:hover,
-.studio-pin:focus-visible {
-  z-index: 5;
-}
-.studio-pin.is-selected .studio-pin-label,
-.studio-pin:hover .studio-pin-label,
-.studio-pin:focus-visible .studio-pin-label {
-  opacity: 1;
-}
-.studio-pin.is-selected .studio-pin-number {
-  background: #dceecd;
-  color: #183226;
-  border-color: #fff;
-  box-shadow:
-    0 0 0 5px #e0f1c780,
-    0 4px 20px #10251d6b;
 }
 .studio-status-working {
   --pin-status: #b6ef87;
@@ -231,30 +122,6 @@
 }
 .studio-status-idle {
   --pin-status: #9dafaa;
-}
-.office-studio[data-motion="on"]
-  .studio-pin.studio-status-working
-  .studio-pin-number,
-.office-studio[data-motion="on"]
-  .studio-pin.studio-status-thinking
-  .studio-pin-number,
-.office-studio[data-motion="on"]
-  .studio-pin.studio-status-passing
-  .studio-pin-number {
-  animation: studio-activity 2.4s ease-in-out infinite;
-}
-@keyframes studio-activity {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 3px #e0f1c733,
-      0 3px 12px #0a1d215c;
-  }
-  50% {
-    box-shadow:
-      0 0 0 8px #e0f1c766,
-      0 3px 12px #0a1d215c;
-  }
 }
 .studio-directory {
   display: grid;
@@ -440,9 +307,6 @@
   outline: 3px solid #27777c;
   outline-offset: 3px;
 }
-.office-studio .studio-pin:focus-visible {
-  outline-color: #fff;
-}
 .office-studio button:disabled {
   cursor: default;
   opacity: 0.65;
@@ -458,12 +322,6 @@
   }
 }
 @media (max-width: 600px) {
-  .studio-pin {
-    display: none;
-  }
-  .studio-mobile-marker {
-    display: grid;
-  }
   .office-studio {
     margin: 14px 12px 20px;
   }
@@ -479,14 +337,6 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;
-  }
-  .studio-pin-number {
-    width: 27px;
-    height: 27px;
-    font-size: 9px;
-  }
-  .studio-pin-label {
-    display: none;
   }
   .studio-toolbar {
     gap: 9px;
@@ -525,14 +375,6 @@
   .studio-recent time {
     grid-column: 2;
     grid-row: 1;
-  }
-}
-@container (max-width:560px) {
-  .studio-pin {
-    display: none;
-  }
-  .studio-mobile-marker {
-    display: grid;
   }
 }
 @media (prefers-reduced-motion: reduce) {

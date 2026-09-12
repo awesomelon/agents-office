@@ -1,11 +1,4 @@
-import {
-  Component,
-  lazy,
-  Suspense,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { Component, lazy, Suspense, useState, type ReactNode } from "react";
 import { useShallow } from "zustand/shallow";
 import { useAgentStore, useLogStore, useSettingsStore } from "../../store";
 import { deskForEntry } from "../../config/toolMapping";
@@ -15,6 +8,8 @@ import { STUDIO_STATUS, STUDIO_ZONES } from "./studioLayout";
 import { useAnimationPreferences } from "./canvas/hooks/useAnimationPreferences";
 import { useStudioMaintenance } from "./useStudioMaintenance";
 import type { AgentType } from "../../types";
+import { StudioAvatar } from "./StudioAvatar";
+import { StudioCharacter } from "./StudioCharacter";
 
 const PixelOffice = lazy(() =>
   import("./OfficeCanvas").then((module) => ({ default: module.OfficeCanvas })),
@@ -142,6 +137,7 @@ export function OfficeStudio() {
           <div className="studio-artboard">
             {!imageFailed ? (
               <img
+                className="studio-room-image"
                 src="/assets/codex-studio.webp"
                 width="1536"
                 height="1024"
@@ -161,46 +157,21 @@ export function OfficeStudio() {
               STUDIO_ZONES.map((zone, index) => {
                 const status = statusFor(zone.id);
                 return (
-                  <button
+                  <StudioCharacter
                     key={zone.id}
-                    type="button"
-                    className={`studio-pin studio-status-${status} ${zone.id === activeZone.id ? "is-selected" : ""}`}
-                    style={
-                      { left: `${zone.x}%`, top: `${zone.y}%` } as CSSProperties
-                    }
-                    aria-label={`${zone.label}: ${STUDIO_STATUS[status]}${vacations[zone.id] ? ", rate limited" : ""}`}
-                    aria-pressed={zone.id === activeZone.id}
-                    aria-controls="studio-role-detail"
-                    onClick={() => selectZone(zone.id)}
-                  >
-                    <span className="studio-pin-number" aria-hidden="true">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="studio-pin-label" aria-hidden="true">
-                      {zone.label}
-                      <small>
-                        {vacations[zone.id]
-                          ? "Rate limited"
-                          : STUDIO_STATUS[status]}
-                      </small>
-                    </span>
-                  </button>
+                    role={zone.id}
+                    label={zone.label}
+                    index={index}
+                    status={status}
+                    rateLimited={Boolean(vacations[zone.id])}
+                    selected={zone.id === activeZone.id}
+                    onSelect={selectZone}
+                  />
                 );
               })}
-            {!imageFailed &&
-              STUDIO_ZONES.map((zone, index) => (
-                <span
-                  key={zone.id}
-                  aria-hidden="true"
-                  className={`studio-mobile-marker ${zone.id === activeZone.id ? "is-selected" : ""}`}
-                  style={{ left: `${zone.x}%`, top: `${zone.y}%` }}
-                >
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-              ))}
           </div>
           <div className="studio-scene-footer">
-            <span>Select a space or a role below to see its activity</span>
+            <span>Select a character or a role below to see its activity</span>
             <span>6 desks · library · lounge</span>
           </div>
         </div>
@@ -232,6 +203,7 @@ export function OfficeStudio() {
             aria-controls="studio-role-detail"
             onClick={() => selectZone(zone.id)}
           >
+            <StudioAvatar role={zone.id} portrait />
             <span className="studio-role-index" aria-hidden="true">
               {String(index + 1).padStart(2, "0")}
             </span>
@@ -254,6 +226,7 @@ export function OfficeStudio() {
         aria-labelledby="studio-detail-title"
       >
         <div className="studio-detail-header">
+          <StudioAvatar role={activeZone.id} portrait />
           <div>
             <span className="eyebrow">{activeZone.place}</span>
             <h3 id="studio-detail-title">
@@ -261,7 +234,9 @@ export function OfficeStudio() {
               <span
                 className={`studio-detail-status studio-status-${selectedStatus}`}
               >
-                {STUDIO_STATUS[selectedStatus]}
+                {vacations[activeZone.id]
+                  ? "Rate limited"
+                  : STUDIO_STATUS[selectedStatus]}
               </span>
             </h3>
           </div>
@@ -316,8 +291,9 @@ export function OfficeStudio() {
         )}
       </section>
       <p className="studio-disclosure">
-        Spaces illustrate workflow roles, not individual Codex agents. Status
-        reflects observed logs; it does not prove a process is still running.
+        Characters illustrate workflow roles, not individual Codex agents.
+        Status reflects observed logs; it does not prove a process is still
+        running.
       </p>
     </div>
   );
