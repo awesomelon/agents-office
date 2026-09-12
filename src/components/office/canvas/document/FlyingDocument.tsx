@@ -3,11 +3,25 @@ import { useCallback, useEffect, useMemo } from "react";
 import { TextStyle } from "pixi.js";
 import type { DocumentTransfer } from "../../../../store";
 import { TOOL_COLORS } from "../../../../types";
-import { DOCUMENT_ARC_HEIGHT, DOCUMENT_SIZE, DOCUMENT_TRANSFER_DURATION_MS } from "../constants";
+import { isDeskId } from "../../../../config/toolMapping";
+import {
+  DOCUMENT_ARC_HEIGHT,
+  DOCUMENT_SIZE,
+  DOCUMENT_TRANSFER_DURATION_MS,
+} from "../constants";
 import { clamp01, easeOutCubic, lerp } from "../math";
 import { getAgentPosition } from "../layout";
 
-type ToolKind = "explore" | "analyze" | "architect" | "develop" | "operate" | "validate" | "connect" | "liaison" | "other";
+type ToolKind =
+  | "explore"
+  | "analyze"
+  | "architect"
+  | "develop"
+  | "operate"
+  | "validate"
+  | "connect"
+  | "liaison"
+  | "other";
 
 interface ToolStamp {
   label: string;
@@ -15,53 +29,33 @@ interface ToolStamp {
   kind: ToolKind;
 }
 
-const DEFAULT_STAMP: ToolStamp = { label: "???", color: TOOL_COLORS.other, kind: "other" };
-
-/**
- * Tool stamps for flying documents (workflow-based).
- * Maps tool names to visual stamps shown during document transfer.
- */
-const TOOL_STAMPS: Record<string, ToolStamp> = {
-  // Explorer tools - 파일 탐색
-  read: { label: "EXPL", color: TOOL_COLORS.explore, kind: "explore" },
-  glob: { label: "EXPL", color: TOOL_COLORS.explore, kind: "explore" },
-
-  // Analyzer tools - 내용 분석
-  grep: { label: "ANLZ", color: TOOL_COLORS.analyze, kind: "analyze" },
-  websearch: { label: "ANLZ", color: TOOL_COLORS.analyze, kind: "analyze" },
-
-  // Architect tools - 계획 수립
-  todowrite: { label: "ARCH", color: TOOL_COLORS.architect, kind: "architect" },
-  task: { label: "ARCH", color: TOOL_COLORS.architect, kind: "architect" },
-
-  // Developer tools - 코드 작성
-  write: { label: "DEV", color: TOOL_COLORS.develop, kind: "develop" },
-  edit: { label: "DEV", color: TOOL_COLORS.develop, kind: "develop" },
-  notebookedit: { label: "DEV", color: TOOL_COLORS.develop, kind: "develop" },
-
-  // Operator tools - 명령 실행
-  bash: { label: "OPER", color: TOOL_COLORS.operate, kind: "operate" },
-
-  // Connector tools - 외부 연동
-  webfetch: { label: "CONN", color: TOOL_COLORS.connect, kind: "connect" },
-  skill: { label: "CONN", color: TOOL_COLORS.connect, kind: "connect" },
-
-  // Liaison tools - 사용자 소통
-  askuserquestion: { label: "LIAS", color: TOOL_COLORS.liaison, kind: "liaison" },
+const DEFAULT_STAMP: ToolStamp = {
+  label: "???",
+  color: TOOL_COLORS.other,
+  kind: "other",
 };
 
-function getToolStamp(toolName: string | null | undefined): ToolStamp {
-  const tool = toolName?.trim()?.toLowerCase();
-  if (!tool) return DEFAULT_STAMP;
-
-  const stamp = TOOL_STAMPS[tool];
-  if (stamp) return stamp;
-
-  return { label: tool.slice(0, 4).toUpperCase(), color: 0x6b7280, kind: "other" };
-}
+// Use the destination role already inferred by the Codex event pipeline. A
+// shell command can represent exploration, validation, or operation.
+const ROLE_STAMPS: Record<string, ToolStamp> = {
+  explorer: { label: "EXPL", color: TOOL_COLORS.explore, kind: "explore" },
+  analyzer: { label: "ANLZ", color: TOOL_COLORS.analyze, kind: "analyze" },
+  architect: { label: "ARCH", color: TOOL_COLORS.architect, kind: "architect" },
+  developer: { label: "DEV", color: TOOL_COLORS.develop, kind: "develop" },
+  operator: { label: "OPER", color: TOOL_COLORS.operate, kind: "operate" },
+  validator: { label: "TEST", color: TOOL_COLORS.validate, kind: "validate" },
+  connector: { label: "CONN", color: TOOL_COLORS.connect, kind: "connect" },
+  liaison: { label: "LIAS", color: TOOL_COLORS.liaison, kind: "liaison" },
+};
 
 // Pixel art icon rendering for each tool kind (workflow-based)
-function drawToolIcon(g: any, kind: ToolKind, color: number, cx: number, cy: number): void {
+function drawToolIcon(
+  g: any,
+  kind: ToolKind,
+  color: number,
+  cx: number,
+  cy: number,
+): void {
   const P = 2; // pixel size
   g.beginFill(color, 0.95);
 
@@ -214,18 +208,25 @@ interface FlyingDocumentProps {
   now: number;
   stackDepth: number;
   onComplete: (transferId: string) => void;
+  reducedMotion: boolean;
 }
 
-export function FlyingDocument({ transfer, now, stackDepth, onComplete }: FlyingDocumentProps): JSX.Element | null {
-  const progress = clamp01((now - transfer.startedAt) / DOCUMENT_TRANSFER_DURATION_MS);
+export function FlyingDocument({
+  transfer,
+  now,
+  stackDepth,
+  onComplete,
+  reducedMotion,
+}: FlyingDocumentProps): JSX.Element | null {
+  const progress = reducedMotion
+    ? 1
+    : clamp01((now - transfer.startedAt) / DOCUMENT_TRANSFER_DURATION_MS);
 
   useEffect(() => {
     if (progress >= 1) {
       onComplete(transfer.id);
     }
   }, [progress, onComplete, transfer.id]);
-
-  if (progress >= 1) return null;
 
   const eased = easeOutCubic(progress);
   const from = getAgentPosition(transfer.fromAgentId);
@@ -244,35 +245,63 @@ export function FlyingDocument({ transfer, now, stackDepth, onComplete }: Flying
   const stackScale = Math.max(0.7, 1 - stackDepth * 0.05);
   const stackAlpha = Math.max(0.35, 1 - stackDepth * 0.15);
 
-  const stamp = useMemo(() => getToolStamp(transfer.toolName), [transfer.toolName]);
+  const stamp = useMemo(
+    () =>
+      isDeskId(transfer.toAgentId)
+        ? ROLE_STAMPS[transfer.toAgentId]
+        : DEFAULT_STAMP,
+    [transfer.toAgentId],
+  );
 
-  const draw = useCallback((g: any) => {
-    g.clear();
+  const draw = useCallback(
+    (g: any) => {
+      g.clear();
 
-    // Document shadow
-    g.beginFill(0x000000, 0.2);
-    g.drawRect(-DOCUMENT_SIZE / 2 + 2, -DOCUMENT_SIZE * 0.7 + 2, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
-    g.endFill();
+      // Document shadow
+      g.beginFill(0x000000, 0.2);
+      g.drawRect(
+        -DOCUMENT_SIZE / 2 + 2,
+        -DOCUMENT_SIZE * 0.7 + 2,
+        DOCUMENT_SIZE,
+        DOCUMENT_SIZE * 1.4,
+      );
+      g.endFill();
 
-    // Document paper
-    g.beginFill(0xffffff);
-    g.drawRect(-DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7, DOCUMENT_SIZE, DOCUMENT_SIZE * 1.4);
-    g.endFill();
+      // Document paper
+      g.beginFill(0xffffff);
+      g.drawRect(
+        -DOCUMENT_SIZE / 2,
+        -DOCUMENT_SIZE * 0.7,
+        DOCUMENT_SIZE,
+        DOCUMENT_SIZE * 1.4,
+      );
+      g.endFill();
 
-    // Tool icon in center (main visual)
-    drawToolIcon(g, stamp.kind, stamp.color, 0, -3);
+      // Tool icon in center (main visual)
+      drawToolIcon(g, stamp.kind, stamp.color, 0, -3);
 
-    // Fold corner
-    g.beginFill(0xe0e0e0);
-    g.moveTo(DOCUMENT_SIZE / 2 - 4, -DOCUMENT_SIZE * 0.7);
-    g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7 + 4);
-    g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7);
-    g.closePath();
-    g.endFill();
-  }, [stamp.kind, stamp.color]);
+      // Fold corner
+      g.beginFill(0xe0e0e0);
+      g.moveTo(DOCUMENT_SIZE / 2 - 4, -DOCUMENT_SIZE * 0.7);
+      g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7 + 4);
+      g.lineTo(DOCUMENT_SIZE / 2, -DOCUMENT_SIZE * 0.7);
+      g.closePath();
+      g.endFill();
+    },
+    [stamp.kind, stamp.color],
+  );
+
+  // Keep hooks in the same order on the completion frame.
+  if (progress >= 1) return null;
 
   return (
-    <Container x={x + stackOffsetX} y={y + stackOffsetY} rotation={rotation} scale={scale * stackScale} alpha={stackAlpha}>
+    <Container
+      x={x + stackOffsetX}
+      y={y + stackOffsetY}
+      rotation={rotation}
+      scale={scale * stackScale}
+      alpha={stackAlpha}
+    >
       <Graphics draw={draw} />
       <Text
         text={stamp.label}
@@ -284,4 +313,3 @@ export function FlyingDocument({ transfer, now, stackDepth, onComplete }: Flying
     </Container>
   );
 }
-

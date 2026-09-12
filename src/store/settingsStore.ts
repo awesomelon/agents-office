@@ -4,14 +4,10 @@ import { persist } from "zustand/middleware";
 interface SettingsState {
   showInbox: boolean;
   showTimeline: boolean;
-  animationSpeed: number;
-  soundEnabled: boolean;
-  theme: "dark" | "light";
+  showOffice: boolean;
   toggleInbox: () => void;
   toggleTimeline: () => void;
-  setAnimationSpeed: (speed: number) => void;
-  setSoundEnabled: (enabled: boolean) => void;
-  setTheme: (theme: "dark" | "light") => void;
+  toggleOffice: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -19,32 +15,14 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       showInbox: true,
       showTimeline: true,
-      animationSpeed: 1,
-      soundEnabled: false,
-      theme: "dark",
-
-      toggleInbox: () => {
-        set((state) => ({ showInbox: !state.showInbox }));
-      },
-
-      toggleTimeline: () => {
-        set((state) => ({ showTimeline: !state.showTimeline }));
-      },
-
-      setAnimationSpeed: (speed) => {
-        set({ animationSpeed: speed });
-      },
-
-      setSoundEnabled: (enabled) => {
-        set({ soundEnabled: enabled });
-      },
-
-      setTheme: (theme) => {
-        set({ theme });
-      },
+      showOffice:
+        typeof matchMedia === "undefined" ||
+        !matchMedia("(prefers-reduced-motion: reduce)").matches,
+      toggleInbox: () => set((state) => ({ showInbox: !state.showInbox })),
+      toggleTimeline: () =>
+        set((state) => ({ showTimeline: !state.showTimeline })),
+      toggleOffice: () => set((state) => ({ showOffice: !state.showOffice })),
     }),
-    {
-      name: "agents-office-settings",
-    }
-  )
+    { name: "codex-office-settings", version: 1 },
+  ),
 );

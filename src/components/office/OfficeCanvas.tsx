@@ -1,7 +1,9 @@
+import "./canvas/pixiSetup";
 import { Container, Stage } from "@pixi/react";
 import { useEffect, useMemo, useRef } from "react";
+import { utils } from "pixi.js";
 import { useShallow } from "zustand/shallow";
-import { startHudPruning, stopHudPruning, useAgentStore, useHudStore } from "../../store";
+import { useAgentStore, useHudStore } from "../../store";
 import { DESK_CONFIGS } from "../../types";
 import type { AgentStatus } from "../../types";
 import {
@@ -21,10 +23,21 @@ import { HorizontalPartition } from "./canvas/partition/HorizontalPartition";
 import { useAgentMotion } from "./canvas/hooks/useAgentMotion";
 import { useNowRaf } from "./canvas/hooks/useNowRaf";
 import { useOfficeViewport } from "./canvas/hooks/useOfficeViewport";
+import { useAnimationPreferences } from "./canvas/hooks/useAnimationPreferences";
+
+const STAGE_OPTIONS = { backgroundColor: 0x1a1a2e, antialias: true };
 
 export function OfficeCanvas(): JSX.Element {
   // Consolidated Zustand selectors using useShallow to reduce re-renders
-  const { agents, vacationById, errorById, documentTransfers, lastToolCallAtById, lastErrorAtById, effects } = useAgentStore(
+  const {
+    agents,
+    vacationById,
+    errorById,
+    documentTransfers,
+    lastToolCallAtById,
+    lastErrorAtById,
+    effects,
+  } = useAgentStore(
     useShallow((state) => ({
       agents: state.agents,
       vacationById: state.vacationById,
@@ -33,41 +46,51 @@ export function OfficeCanvas(): JSX.Element {
       lastToolCallAtById: state.lastToolCallAtById,
       lastErrorAtById: state.lastErrorAtById,
       effects: state.effects,
-    }))
+    })),
   );
-  const removeDocumentTransfer = useAgentStore((state) => state.removeDocumentTransfer);
+  const removeDocumentTransfer = useAgentStore(
+    (state) => state.removeDocumentTransfer,
+  );
   const clearExpiredTasks = useAgentStore((state) => state.clearExpiredTasks);
-  const removeExpiredEffects = useAgentStore((state) => state.removeExpiredEffects);
+  const removeExpiredEffects = useAgentStore(
+    (state) => state.removeExpiredEffects,
+  );
   const hudMetrics = useHudStore(useShallow((state) => state.getMetrics()));
-  const { dimensions, scale, offsetX, offsetY, viewport } = useOfficeViewport();
+  const { containerRef, dimensions, scale, offsetX, offsetY, viewport } =
+    useOfficeViewport();
+  const { reducedMotion, visible } = useAnimationPreferences();
+  const supportsWebGL = useMemo(() => utils.isWebGLSupported(), []);
 
   // Use ref for `now` to avoid triggering re-renders on every RAF tick
   const nowRef = useRef(performance.now());
 
-  const motionById = useAgentMotion({ agents, vacationById, nowRef });
+  const motionById = useAgentMotion({
+    agents,
+    vacationById,
+    nowRef,
+    reducedMotion,
+  });
   useNowRaf({
     nowRef,
     documentTransfers,
     motionById,
     effects,
     removeExpiredEffects,
+    enabled: visible && supportsWebGL,
+    reducedMotion,
   });
-
-  // Start HUD pruning on mount
-  useEffect(() => {
-    startHudPruning();
-    return () => stopHudPruning();
-  }, []);
 
   // RAF loop extracted into `useNowRaf`
 
   // Clear speech bubbles after timeout
   useEffect(() => {
+    if (!visible) return;
+    clearExpiredTasks(SPEECH_BUBBLE_TIMEOUT_MS);
     const interval = setInterval(() => {
       clearExpiredTasks(SPEECH_BUBBLE_TIMEOUT_MS);
     }, SPEECH_BUBBLE_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [clearExpiredTasks]);
+  }, [clearExpiredTasks, visible]);
 
   // Agent motion state extracted into `useAgentMotion`
 
@@ -84,15 +107,39 @@ export function OfficeCanvas(): JSX.Element {
 
   // dimensions가 0일 때 빈 컨테이너만 렌더링하여 깜빡임 방지
   if (dimensions.width === 0 || dimensions.height === 0) {
-    return <div className="office-container w-full h-full bg-inbox-bg" />;
+    return (
+      <div
+        ref={containerRef}
+        className="office-container w-full h-full bg-inbox-bg"
+      />
+    );
+  }
+
+  // Pixi's Stage cannot safely unmount a partially constructed renderer.
+  // Check support before mounting so unavailable WebGL never blanks the app.
+  if (!supportsWebGL) {
+    return (
+      <div
+        ref={containerRef}
+        className="office-container flex h-full w-full items-center justify-center bg-inbox-bg p-8 text-center text-sm text-gray-400"
+      >
+        The office illustration requires WebGL. Codex activity is available in
+        the workflow roles and event timeline.
+      </div>
+    );
   }
 
   return (
-    <div className="office-container w-full h-full bg-inbox-bg">
+    <div
+      ref={containerRef}
+      className="office-container w-full h-full bg-inbox-bg"
+    >
       <Stage
         width={dimensions.width}
         height={dimensions.height}
-        options={{ backgroundColor: 0x1a1a2e, antialias: true }}
+        options={STAGE_OPTIONS}
+        raf={false}
+        renderOnComponentChange
       >
         <Container x={offsetX} y={offsetY} scale={scale}>
           <OfficeBackground viewport={viewport} />
@@ -117,8 +164,17 @@ export function OfficeCanvas(): JSX.Element {
           {visibleAgents.map((agent) => {
             const target = getAgentPosition(agent.id); // DESK_CONFIGS 사용
             const motion = motionById[agent.id];
-            const state = motion ? computeMotionState(motion, nowRef.current) : { x: target.x, y: target.y, alpha: 1 };
-            const mood = computeAgentMood(agent.id, errorById, vacationById, lastToolCallAtById, lastErrorAtById, Date.now());
+            const state = motion
+              ? computeMotionState(motion, nowRef.current)
+              : { x: target.x, y: target.y, alpha: 1 };
+            const mood = computeAgentMood(
+              agent.id,
+              errorById,
+              vacationById,
+              lastToolCallAtById,
+              lastErrorAtById,
+              Date.now(),
+            );
 
             return (
               <AgentSprite
@@ -130,6 +186,7 @@ export function OfficeCanvas(): JSX.Element {
                 motion={motion}
                 mood={mood}
                 now={nowRef.current}
+                reducedMotion={reducedMotion}
               />
             );
           })}
@@ -142,10 +199,13 @@ export function OfficeCanvas(): JSX.Element {
                 now={nowRef.current}
                 stackDepth={stackDepth}
                 onComplete={removeDocumentTransfer}
+                reducedMotion={reducedMotion}
               />
             );
           })}
-          <EffectsLayer effects={effects} now={nowRef.current} />
+          {!reducedMotion && (
+            <EffectsLayer effects={effects} now={nowRef.current} />
+          )}
           {/* HUD overlay on top of wall */}
           {SHOW_HUD && (
             <HudDisplay
@@ -161,4 +221,3 @@ export function OfficeCanvas(): JSX.Element {
     </div>
   );
 }
-

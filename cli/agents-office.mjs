@@ -5,219 +5,298 @@ import path from "node:path";
 import crypto from "node:crypto";
 import https from "node:https";
 import { spawnSync } from "node:child_process";
+import { pipeline } from "node:stream/promises";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
-const GITHUB_OWNER = "awesomelon";
-const GITHUB_REPO = "agents-office";
-const USER_AGENT = "agents-office-cli";
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || null;
-
+const RELEASE_API =
+  "https://api.github.com/repos/awesomelon/agents-office/releases";
 const CACHE_DIR = process.env.AGENTS_OFFICE_CACHE_DIR
   ? path.resolve(process.env.AGENTS_OFFICE_CACHE_DIR)
   : path.join(os.homedir(), "Library", "Caches", "agents-office");
+export const ASSET_NAME = "Codex-Office-macos.zip";
+const APP_NAME = "Agents Office.app";
+const CACHE_SCHEMA = 2;
 
-const ASSET_NAME_CANDIDATES = [
-  "Agents-Office-macos.zip",
-  "Agents Office-macos.zip",
-  "AgentsOffice-macos.zip",
-  "Agents-Office-macOS.zip",
-  "Agents Office.app.zip",
-];
+export function normalizeTag(value) {
+  if (!/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(value)) {
+    throw new Error(
+      `Invalid version: ${value}. Expected a release version such as 0.2.0.`,
+    );
+  }
+  return value.startsWith("v") ? value : `v${value}`;
+}
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { version: null, help: false, force: false, quiet: false };
   for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--help" || a === "-h") args.help = true;
-    else if (a === "--quiet" || a === "-q") args.quiet = true;
-    else if (a === "--force") args.force = true;
-    else if (a === "--version" || a === "-v") args.version = argv[++i] ?? null;
+    const arg = argv[i];
+    if (arg === "--help" || arg === "-h") args.help = true;
+    else if (arg === "--quiet" || arg === "-q") args.quiet = true;
+    else if (arg === "--force") args.force = true;
+    else if (arg === "--version" || arg === "-v") {
+      if (!argv[i + 1] || argv[i + 1].startsWith("-")) {
+        throw new Error(
+          `${arg} requires a release version, for example --version 0.2.0.`,
+        );
+      }
+      args.version = normalizeTag(argv[++i]);
+    } else
+      throw new Error(`Unknown argument: ${arg}. Run with --help for usage.`);
   }
   return args;
 }
 
-function log(msg, { quiet }) {
-  if (!quiet) process.stdout.write(`${msg}\n`);
-}
-
-function fail(msg) {
-  process.stderr.write(`${msg}\n`);
-  process.exit(1);
+function log(message, { quiet }) {
+  if (!quiet) process.stdout.write(`${message}\n`);
 }
 
 function usage() {
   return `
+Codex Office — a local Codex session monitor for macOS.
+
 Usage:
   npx @j-ho/agents-office [--version <x.y.z>] [--force] [--quiet]
 
 Options:
-  --version, -v   Use a specific version tag (e.g. 0.1.2 -> v0.1.2)
-  --force         Re-download even if cached
+  --version, -v   Use a specific Codex release (e.g. 0.2.0 -> v0.2.0)
+  --force         Download and verify a fresh copy
   --quiet, -q     Reduce logs
   --help, -h      Show help
+
+Requires a release containing ${ASSET_NAME} and a SHA-256 checksum.
 `;
 }
 
-function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function withLock(lockPath, fn) {
+export async function withLock(
+  lockPath,
+  fn,
+  { timeoutMs = 60_000, pollMs = 250 } = {},
+) {
   const started = Date.now();
-  const timeoutMs = 60_000;
-  while (true) {
+  let fd;
+  while (fd === undefined) {
     try {
-      const fd = fs.openSync(lockPath, "wx");
-      try {
-        return fn();
-      } finally {
-        try {
-          fs.closeSync(fd);
-        } catch {}
-        try {
-          fs.unlinkSync(lockPath);
-        } catch {}
+      fd = fs.openSync(lockPath, "wx");
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (Date.now() - started >= timeoutMs) {
+        throw new Error(
+          `Another agents-office process is busy (lock timeout): ${lockPath}. If no launcher is running, remove the stale lock and retry.`,
+        );
       }
-    } catch (err) {
-      if (err && err.code !== "EEXIST") throw err;
-      if (Date.now() - started > timeoutMs) {
-        fail(`Another agents-office process is busy (lock timeout): ${lockPath}`);
-      }
-      // simple backoff
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+      await delay(pollMs);
     }
+  }
+  try {
+    fs.writeFileSync(fd, JSON.stringify({ pid: process.pid }));
+    return await fn();
+  } finally {
+    fs.closeSync(fd);
+    fs.rmSync(lockPath, { force: true });
   }
 }
 
-function toHttpError(statusCode, url, body) {
-  const err = new Error(`HTTP ${statusCode} from ${url}: ${String(body).slice(0, 200)}`);
-  err.statusCode = statusCode;
-  err.url = url;
-  err.body = body;
-  return err;
+export function requestHeaders(url, accept, token = process.env.GITHUB_TOKEN) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+    throw new Error(
+      "Release downloads require HTTPS URLs without embedded credentials.",
+    );
+  }
+  return {
+    "User-Agent": "codex-office-cli",
+    Accept: accept,
+    ...(token &&
+    parsed.hostname === "api.github.com" &&
+    (!parsed.port || parsed.port === "443")
+      ? { Authorization: `Bearer ${token}` }
+      : {}),
+  };
 }
 
-function httpsGetJson(url) {
-  return new Promise((resolve, reject) => {
-    const req = https.request(
-      url,
-      {
-        method: "GET",
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept: "application/vnd.github+json",
-          ...(GITHUB_TOKEN ? { Authorization: `Bearer ${GITHUB_TOKEN}` } : {}),
-        },
-      },
-      (res) => {
-        let body = "";
-        res.setEncoding("utf8");
-        res.on("data", (chunk) => (body += chunk));
-        res.on("end", () => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            try {
-              resolve(JSON.parse(body));
-            } catch (e) {
-              reject(new Error(`Failed to parse JSON from ${url}: ${e.message}`));
-            }
-          } else {
-            reject(toHttpError(res.statusCode, url, body));
-          }
-        });
+async function responseStream(
+  url,
+  accept,
+  { request = https.request, redirects = 0 } = {},
+) {
+  const headers = requestHeaders(url, accept);
+  return await new Promise((resolve, reject) => {
+    const req = request(url, { method: "GET", headers }, (res) => {
+      if (
+        res.statusCode >= 300 &&
+        res.statusCode < 400 &&
+        res.headers.location
+      ) {
+        res.on("error", () => {});
+        res.resume();
+        if (redirects >= 5)
+          return reject(new Error("Too many release download redirects."));
+        let next;
+        try {
+          next = new URL(res.headers.location, url).href;
+        } catch (error) {
+          return reject(error);
+        }
+        resolve(
+          responseStream(next, accept, { request, redirects: redirects + 1 }),
+        );
+      } else if (res.statusCode >= 200 && res.statusCode < 300) {
+        resolve(res);
+      } else {
+        res.on("error", () => {});
+        res.resume();
+        const error = new Error(
+          `HTTP ${res.statusCode} from ${new URL(url).hostname}`,
+        );
+        error.statusCode = res.statusCode;
+        reject(error);
       }
+    });
+    req.setTimeout(30_000, () =>
+      req.destroy(new Error("Release request timed out.")),
     );
     req.on("error", reject);
     req.end();
   });
 }
 
-function downloadToFile(url, destPath, { quiet }) {
-  return new Promise((resolve, reject) => {
-    ensureDir(path.dirname(destPath));
-    const tmpPath = `${destPath}.tmp-${process.pid}`;
-    const file = fs.createWriteStream(tmpPath);
-
-    const req = https.request(
-      url,
-      {
-        method: "GET",
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept: "application/octet-stream",
-          ...(GITHUB_TOKEN ? { Authorization: `Bearer ${GITHUB_TOKEN}` } : {}),
-        },
-      },
-      (res) => {
-        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          file.close(() => {
-            fs.rmSync(tmpPath, { force: true });
-            resolve(downloadToFile(res.headers.location, destPath, { quiet }));
-          });
-          return;
-        }
-
-        if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
-          file.close(() => {
-            fs.rmSync(tmpPath, { force: true });
-            reject(toHttpError(res.statusCode, url, ""));
-          });
-          return;
-        }
-
-        res.pipe(file);
-        file.on("finish", () => {
-          file.close(() => {
-            fs.renameSync(tmpPath, destPath);
-            log(`Downloaded: ${path.basename(destPath)}`, { quiet });
-            resolve();
-          });
-        });
-      }
-    );
-
-    req.on("error", (err) => {
-      try {
-        file.close(() => fs.rmSync(tmpPath, { force: true }));
-      } catch {}
-      reject(err);
-    });
-    file.on("error", (err) => {
-      try {
-        fs.rmSync(tmpPath, { force: true });
-      } catch {}
-      reject(err);
-    });
-
-    req.end();
-  });
+export async function httpsGetJson(url, options = {}) {
+  const response = await responseStream(
+    url,
+    "application/vnd.github+json",
+    options,
+  );
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response) {
+    size += Buffer.byteLength(chunk);
+    if (size > 5 * 1024 * 1024) {
+      response.destroy();
+      throw new Error("GitHub release response exceeded the size limit.");
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new Error("GitHub returned invalid release JSON.");
+  }
 }
 
-function sha256File(filePath) {
+export async function downloadToFile(url, destPath, options = {}) {
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  const tmpPath = `${destPath}.tmp-${crypto.randomUUID()}`;
+  try {
+    const response = await responseStream(
+      url,
+      "application/octet-stream",
+      options,
+    );
+    await pipeline(response, fs.createWriteStream(tmpPath, { flags: "wx" }));
+    fs.renameSync(tmpPath, destPath);
+    log(`Downloaded: ${path.basename(destPath)}`, options);
+  } finally {
+    fs.rmSync(tmpPath, { force: true });
+  }
+}
+
+async function sha256File(filePath) {
   const hash = crypto.createHash("sha256");
-  const buf = fs.readFileSync(filePath);
-  hash.update(buf);
+  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
   return hash.digest("hex");
 }
 
-function extractZip(zipPath, outDir) {
-  ensureDir(outDir);
-  // Use macOS built-in ditto for zip extraction.
-  const r = spawnSync("ditto", ["-x", "-k", zipPath, outDir], { stdio: "inherit" });
-  if (r.status !== 0) {
-    throw new Error(`Failed to extract zip (ditto exit ${r.status})`);
+export function parseChecksum(text, assetName, direct = false) {
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.trim().match(/^([a-fA-F0-9]{64})(?:\s+\*?(.+))?$/);
+    if (match && (match[2] === assetName || (direct && !match[2]))) {
+      return match[1].toLowerCase();
+    }
   }
+  throw new Error(`No valid SHA-256 checksum for ${assetName}.`);
 }
 
-function findAppBundle(dirPath, maxDepth = 5) {
-  if (maxDepth < 0) return null;
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const ent of entries) {
-    const full = path.join(dirPath, ent.name);
-    if (ent.isDirectory() && ent.name.endsWith(".app")) return full;
+export function pickAsset(release) {
+  const asset = Array.isArray(release?.assets)
+    ? release.assets.find((entry) => entry?.name === ASSET_NAME)
+    : null;
+  if (!asset || !(asset.url || asset.browser_download_url)) {
+    throw new Error(
+      `This release has no Codex app (${ASSET_NAME}). Publish a Codex release or select one with --version. Legacy Claude releases are incompatible.`,
+    );
   }
-  for (const ent of entries) {
-    const full = path.join(dirPath, ent.name);
-    if (ent.isDirectory() && !ent.name.endsWith(".app")) {
-      const found = findAppBundle(full, maxDepth - 1);
+  return asset;
+}
+
+async function expectedChecksum(release, asset, stagingDir, args, download) {
+  if (/^sha256:[a-fA-F0-9]{64}$/.test(asset.digest ?? "")) {
+    return asset.digest.slice(7).toLowerCase();
+  }
+  const direct = release.assets.find(
+    (entry) => entry?.name === `${ASSET_NAME}.sha256`,
+  );
+  const checksum =
+    direct ?? release.assets.find((entry) => entry?.name === "checksums.txt");
+  if (!checksum || !(checksum.url || checksum.browser_download_url)) {
+    throw new Error(
+      `Release is missing a SHA-256 checksum. Publish ${ASSET_NAME}.sha256 alongside the zip.`,
+    );
+  }
+  const checksumPath = path.join(stagingDir, "checksum.txt");
+  await download(
+    checksum.url || checksum.browser_download_url,
+    checksumPath,
+    args,
+  );
+  return parseChecksum(
+    fs.readFileSync(checksumPath, "utf8"),
+    ASSET_NAME,
+    Boolean(direct),
+  );
+}
+
+function extractZip(zipPath, outDir) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const result = spawnSync("ditto", ["-x", "-k", zipPath, outDir], {
+    stdio: "inherit",
+  });
+  if (result.error || result.status !== 0)
+    throw new Error(
+      `Failed to extract zip: ${result.error?.message ?? `ditto exit ${result.status}`}`,
+    );
+}
+
+export function findAppBundle(dirPath, maxDepth = 5) {
+  if (maxDepth < 0 || !fs.existsSync(dirPath)) return null;
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    if (entry.isDirectory() && entry.name === APP_NAME) {
+      try {
+        const executableDir = path.join(full, "Contents", "MacOS");
+        const hasExecutable = fs
+          .readdirSync(executableDir, { withFileTypes: true })
+          .some(
+            (binary) =>
+              binary.isFile() &&
+              (fs.statSync(path.join(executableDir, binary.name)).mode &
+                0o111) !==
+                0,
+          );
+        if (
+          hasExecutable &&
+          fs.statSync(path.join(full, "Contents", "Info.plist")).isFile()
+        )
+          return full;
+      } catch {
+        /* Incomplete bundles are replaced by a fresh verified download. */
+      }
+    }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() && !entry.name.endsWith(".app")) {
+      const found = findAppBundle(path.join(dirPath, entry.name), maxDepth - 1);
       if (found) return found;
     }
   }
@@ -225,180 +304,142 @@ function findAppBundle(dirPath, maxDepth = 5) {
 }
 
 function openApp(appPath) {
-  const r = spawnSync("open", [appPath], { stdio: "inherit" });
-  return r.status ?? 1;
+  const result = spawnSync("open", [appPath], { stdio: "inherit" });
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `Failed to open app: ${result.error?.message ?? `exit ${result.status}`}. If Gatekeeper blocked it, check System Settings → Privacy & Security.`,
+    );
+  }
 }
 
-async function fetchLatestReleaseOrExplain() {
-  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+function cachedApp(versionDir, tag, asset) {
   try {
-    return await httpsGetJson(url);
-  } catch (err) {
-    // GitHub returns 404 if there are no releases, or if the repo is private without auth.
-    if (err?.statusCode === 404) {
-      throw new Error(
-        [
-          `GitHub Releases latest not found for ${GITHUB_OWNER}/${GITHUB_REPO}.`,
-          `This usually means either:`,
-          `- There is no GitHub Release yet (recommended: create a release like v0.1.3 with Agents-Office-macos.zip), or`,
-          `- The repo is private and you need to set GITHUB_TOKEN for API access.`,
-          ``,
-          `You can also run with a specific tag once releases exist:`,
-          `  npx @j-ho/agents-office --version 0.1.3`,
-        ].join("\n")
-      );
-    }
-    throw err;
+    const marker = JSON.parse(
+      fs.readFileSync(path.join(versionDir, ".ready"), "utf8"),
+    );
+    if (
+      marker.schema !== CACHE_SCHEMA ||
+      marker.provider !== "codex" ||
+      marker.tag !== tag ||
+      marker.asset !== ASSET_NAME
+    )
+      return null;
+    if (
+      marker.assetId !== asset.id ||
+      marker.assetUpdatedAt !== asset.updated_at
+    )
+      return null;
+    if (asset.digest && asset.digest !== `sha256:${marker.sha256}`) return null;
+    return findAppBundle(path.join(versionDir, "extract"));
+  } catch {
+    return null;
   }
 }
 
-async function resolveReleaseTag(requestedVersion) {
-  if (requestedVersion) {
-    const v = requestedVersion.startsWith("v") ? requestedVersion.slice(1) : requestedVersion;
-    return `v${v}`;
-  }
-  const latest = await fetchLatestReleaseOrExplain();
-  if (!latest?.tag_name) throw new Error("GitHub latest release has no tag_name");
-  return latest.tag_name;
-}
-
-async function fetchReleaseByTag(tag) {
-  return await httpsGetJson(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${encodeURIComponent(tag)}`);
-}
-
-function pickAsset(release) {
-  const assets = Array.isArray(release.assets) ? release.assets : [];
-  for (const name of ASSET_NAME_CANDIDATES) {
-    const a = assets.find((x) => x && x.name === name);
-    if (a) return a;
-  }
-  // Fallback: any zip that looks like macos
-  const fallback = assets.find((a) => typeof a?.name === "string" && a.name.endsWith(".zip") && /mac/i.test(a.name));
-  return fallback ?? null;
-}
-
-function findChecksumAsset(release, zipAssetName) {
-  const assets = Array.isArray(release.assets) ? release.assets : [];
-  const direct = assets.find((a) => a?.name === `${zipAssetName}.sha256`);
-  if (direct) return { kind: "sha256", asset: direct };
-  const checksums = assets.find((a) => a?.name === "checksums.txt");
-  if (checksums) return { kind: "checksums.txt", asset: checksums };
-  return null;
-}
-
-async function downloadOptionalChecksum(release, zipAsset, cacheDir, { quiet }) {
-  const checksumInfo = findChecksumAsset(release, zipAsset.name);
-  if (!checksumInfo) return null;
-
-  const checksumPath = path.join(cacheDir, checksumInfo.asset.name);
-  await downloadToFile(checksumInfo.asset.browser_download_url, checksumPath, { quiet });
-
-  if (checksumInfo.kind === "sha256") {
-    const expected = fs.readFileSync(checksumPath, "utf8").trim().split(/\s+/)[0];
-    return { expected, source: checksumInfo.asset.name };
-  }
-
-  // checksums.txt: try to find a line containing the asset name
-  const text = fs.readFileSync(checksumPath, "utf8");
-  const line = text
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l && l.includes(zipAsset.name));
-  if (!line) return null;
-  const expected = line.split(/\s+/)[0];
-  return { expected, source: checksumInfo.asset.name };
-}
-
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+// Dependencies are injectable so release verification is testable without a Mac or network.
+export async function run(
+  argv,
+  {
+    platform = process.platform,
+    cacheDir = CACHE_DIR,
+    fetchJson = httpsGetJson,
+    download = downloadToFile,
+    extract = extractZip,
+    open = openApp,
+  } = {},
+) {
+  const args = parseArgs(argv);
   if (args.help) {
     process.stdout.write(usage());
-    process.exit(0);
+    return;
   }
-
-  ensureDir(CACHE_DIR);
-  const lockPath = path.join(CACHE_DIR, "download.lock");
-
-  await withLock(lockPath, async () => {
-    const tag = await resolveReleaseTag(args.version);
-    const versionDir = path.join(CACHE_DIR, tag);
-    const extractDir = path.join(versionDir, "extract");
-    const marker = path.join(versionDir, ".ready");
-
-    log(`Agents Office CLI (tag: ${tag})`, args);
-
-    if (!args.force && fs.existsSync(marker)) {
-      const appPath = findAppBundle(extractDir);
-      if (!appPath) {
-        // cache seems broken; force re-download below
-        log("Cache marker exists but .app not found; re-downloading.", args);
-      } else {
-        log(`Using cache: ${appPath}`, args);
-        const code = openApp(appPath);
-        if (code !== 0) {
-          fail(
-            `Failed to open app (exit ${code}). If macOS Gatekeeper blocks it, allow it in System Settings -> Privacy & Security.`
-          );
-        }
-        return;
-      }
-    }
-
-    // Prepare fresh directory
-    fs.rmSync(versionDir, { recursive: true, force: true });
-    ensureDir(versionDir);
-    ensureDir(extractDir);
-
-    const release = await fetchReleaseByTag(tag);
-    const asset = pickAsset(release);
-    if (!asset?.browser_download_url || !asset?.name) {
-      fail(
-        `No suitable macOS zip asset found in release ${tag}.\nExpected one of: ${ASSET_NAME_CANDIDATES.join(
-          ", "
-        )}\nPlease upload a zip containing 'Agents Office.app/'.`
+  if (platform !== "darwin")
+    throw new Error(
+      "The release launcher supports macOS only. Build the app from source for other platforms.",
+    );
+  fs.mkdirSync(cacheDir, { recursive: true });
+  await withLock(path.join(cacheDir, "download.lock"), async () => {
+    let release;
+    try {
+      release = await fetchJson(
+        args.version
+          ? `${RELEASE_API}/tags/${encodeURIComponent(args.version)}`
+          : `${RELEASE_API}/latest`,
       );
-    }
-
-    const zipPath = path.join(versionDir, asset.name);
-    log(`Downloading release asset: ${asset.name}`, args);
-    await downloadToFile(asset.browser_download_url, zipPath, args);
-
-    const checksum = await downloadOptionalChecksum(release, asset, versionDir, args);
-    if (checksum?.expected) {
-      const actual = sha256File(zipPath);
-      if (actual.toLowerCase() !== checksum.expected.toLowerCase()) {
-        fail(
-          `Checksum mismatch for ${asset.name}\nExpected(${checksum.source}): ${checksum.expected}\nActual: ${actual}`
+    } catch (error) {
+      if (error.statusCode === 404)
+        throw new Error(
+          "Codex release not found. Publish a Codex release or use --version with an existing Codex tag. Private repositories require GITHUB_TOKEN.",
         );
-      }
-      log(`Checksum OK (${checksum.source})`, args);
-    } else {
-      log("Checksum: skipped (no checksum asset found)", args);
+      throw error;
     }
-
-    log("Extracting...", args);
-    extractZip(zipPath, extractDir);
-
-    const appPath = findAppBundle(extractDir);
+    const tag = normalizeTag(release?.tag_name ?? "");
+    if (args.version && args.version !== tag)
+      throw new Error(
+        "GitHub returned a different release version than requested.",
+      );
+    const asset = pickAsset(release); // Check the release identity before accepting any old cache.
+    const versionDir = path.join(cacheDir, tag);
+    let appPath = args.force ? null : cachedApp(versionDir, tag, asset);
     if (!appPath) {
-      fail(
-        `Extraction completed but .app bundle not found.\nPlease ensure the zip contains 'Agents Office.app/' at any depth.`
-      );
+      const stagingDir = fs.mkdtempSync(path.join(cacheDir, `${tag}.tmp-`));
+      try {
+        const expected = await expectedChecksum(
+          release,
+          asset,
+          stagingDir,
+          args,
+          download,
+        );
+        const zipPath = path.join(stagingDir, ASSET_NAME);
+        log(`Downloading Codex Office (${tag})...`, args);
+        await download(asset.url || asset.browser_download_url, zipPath, args);
+        const actual = await sha256File(zipPath);
+        if (actual !== expected)
+          throw new Error(
+            `Checksum mismatch for ${ASSET_NAME}. Expected ${expected}; received ${actual}.`,
+          );
+        const extractDir = path.join(stagingDir, "extract");
+        extract(zipPath, extractDir);
+        const stagedApp = findAppBundle(extractDir);
+        if (!stagedApp)
+          throw new Error(
+            `Verified archive does not contain a complete ${APP_NAME} bundle.`,
+          );
+        const relativeApp = path.relative(stagingDir, stagedApp);
+        fs.writeFileSync(
+          path.join(stagingDir, ".ready"),
+          JSON.stringify({
+            schema: CACHE_SCHEMA,
+            provider: "codex",
+            tag,
+            asset: ASSET_NAME,
+            assetId: asset.id,
+            assetUpdatedAt: asset.updated_at,
+            sha256: actual,
+          }),
+        );
+        // Keep the last working installation until its replacement has been verified.
+        fs.rmSync(versionDir, { recursive: true, force: true });
+        fs.renameSync(stagingDir, versionDir);
+        appPath = path.join(versionDir, relativeApp);
+      } finally {
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+      }
     }
-
-    fs.writeFileSync(marker, new Date().toISOString(), "utf8");
-    log(`Launching: ${appPath}`, args);
-    const code = openApp(appPath);
-    if (code !== 0) {
-      fail(
-        `Failed to open app (exit ${code}). If macOS Gatekeeper blocks it, allow it in System Settings -> Privacy & Security.`
-      );
-    }
+    log(`Launching Codex Office: ${appPath}`, args);
+    open(appPath);
   });
 }
 
-main().catch((err) => {
-  const msg = err?.stack || err?.message || String(err);
-  fail(`[agents-office] ${msg}`);
-});
-
+if (
+  process.argv[1] &&
+  fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  run(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(
+      `[agents-office] ${error?.message ?? String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });
+}

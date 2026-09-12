@@ -1,112 +1,51 @@
-# Contributing Guide
+# Contributing
 
-## Prerequisites
-
-- Node.js >= 18
-- Rust (for Tauri backend)
-- pnpm/npm/yarn
-
-## Development Setup
+Use Node.js 22+, npm and stable Rust. Desktop development additionally needs
+the platform-specific Tauri prerequisites linked in the README.
 
 ```bash
-# Clone the repository
-git clone https://github.com/awesomelon/agents-office.git
-cd agents-office
-
-# Install dependencies
-npm install
-
-# Start development server (Tauri + Frontend)
-npm run tauri:dev
-
-# Or start frontend only (browser preview)
+npm ci
 npm run dev
+npm run tauri:dev
 ```
 
-## Available Scripts
+Browser preview uses synthetic activity only. Use desktop development for actual
+JSONL observation. Run a new Codex task after opening the observer; startup does
+not replay history.
 
-| Script | Command | Description |
-|--------|---------|-------------|
-| `dev` | `vite` | Start frontend dev server only (browser preview) |
-| `build` | `tsc && vite build` | Build frontend (TypeScript compile + Vite bundle) |
-| `preview` | `vite preview` | Preview production build locally |
-| `tauri` | `tauri` | Run Tauri CLI commands |
-| `tauri:dev` | `tauri dev` | Start full Tauri app in dev mode (frontend + Rust backend) |
-| `tauri:build` | `tauri build` | Build production Tauri application |
-| `zip` | `ditto ...` | Create macOS distribution zip file |
+## Architecture
 
-## Project Structure
+| Area | Responsibility |
+| --- | --- |
+| `src-tauri/src/watcher` | Source discovery, bounded incremental reads, Codex parsing |
+| `src-tauri/src/models` | Serialized events, snapshot and workflow role types |
+| `src/hooks` and `src/services` | Tauri subscription and initial snapshot coordination |
+| `src/store` | Bounded activity, role visualization and HUD state |
+| `src/components/ui` | Connection guidance, accessible controls and searchable inbox |
+| `src/components/office` | PixiJS office scene |
+| `cli` | Verified macOS release download, cache and launcher |
+| `tests` and `src-tauri/core-tests` | Synthetic regression tests |
 
-```
-agents-office/
-├── src/                    # Frontend React + PixiJS
-│   ├── components/         # UI components
-│   │   └── office/         # Office canvas components
-│   ├── hooks/              # React hooks
-│   ├── store/              # Zustand stores
-│   ├── types/              # TypeScript types
-│   └── utils/              # Utility functions
-├── src-tauri/              # Rust backend
-│   └── src/
-│       ├── lib.rs          # Tauri app entry
-│       ├── models/         # Data models
-│       └── watcher/        # File watcher logic
-├── cli/                    # CLI entry point
-└── docs/                   # Documentation
-```
+The Rust backend determines role identities. A Codex thread ID is metadata, not
+a desk ID. Preserve this distinction when adding collaboration events.
 
-## Development Workflow
-
-1. **Branch from main**
-   ```bash
-   git checkout -b feature/your-feature
-   ```
-
-2. **Make changes**
-   - Frontend: `src/` directory
-   - Backend: `src-tauri/src/` directory
-
-3. **Test locally**
-   ```bash
-   npm run tauri:dev
-   ```
-
-4. **Type check**
-   ```bash
-   # Frontend
-   npm run build
-
-   # Backend
-   cd src-tauri && cargo check
-   ```
-
-5. **Commit and push**
-   ```bash
-   git add .
-   git commit -m "feat: your feature description"
-   git push origin feature/your-feature
-   ```
-
-## Type Synchronization
-
-When modifying types, update both locations:
-- TypeScript: `src/types/index.ts`
-- Rust: `src-tauri/src/models/mod.rs`
-
-Key types to keep in sync:
-- `AgentType`: explorer, analyzer, architect, developer, operator, validator, connector, liaison
-- `AgentStatus`: idle, working, thinking, passing, error
-- `LogEntryType`: tool_call, tool_result, message, error, todo_update, session_start, session_end
-
-## Testing
+## Before opening a change
 
 ```bash
-# Rust tests
-cd src-tauri && cargo test
+npm run check
+npm run test:core
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-## Code Style
+The pure Rust harness imports the production parser and tailer directly so it
+can run on machines without GTK/WebKit. It does not replace a native build.
+The macOS CI job covers the full Tauri target.
 
-- TypeScript: Follow existing patterns, use strict typing
-- Rust: Follow Rust conventions, use `cargo fmt`
-- Commits: Use conventional commits (feat, fix, refactor, docs, etc.)
+Use focused regression tests for observed failures: partial bytes, file
+replacement, call correlation, stale snapshots, duplicate events and cache
+integrity. Do not put real user transcripts or credentials in fixtures.
+
+Keep `src/types/index.ts` synchronized with Rust models. Run the metadata check
+when changing versions. Commit Cargo lockfiles and `package-lock.json` so app
+and CI use the same resolved dependencies.

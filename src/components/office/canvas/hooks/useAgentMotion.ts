@@ -22,7 +22,7 @@ import type { AgentMotion, MotionPhase } from "../types";
 /** Create a walking motion from a starting position. */
 function createWalkingMotion(
   startPos: { x: number; y: number },
-  startedAt: number
+  startedAt: number,
 ): AgentMotion {
   const band = findCurrentBand(startPos.y) ?? WALKABLE_BANDS[1];
   const waypoint = generateWaypointInBand(band);
@@ -39,15 +39,19 @@ function createWalkingMotion(
 
 /** Get random pause duration between walking waypoints. */
 function getRandomWalkingPause(): number {
-  return WALKING_PAUSE_MIN_MS + Math.random() * (WALKING_PAUSE_MAX_MS - WALKING_PAUSE_MIN_MS);
+  return (
+    WALKING_PAUSE_MIN_MS +
+    Math.random() * (WALKING_PAUSE_MAX_MS - WALKING_PAUSE_MIN_MS)
+  );
 }
 
 export function useAgentMotion(args: {
   agents: Record<string, Agent>;
   vacationById: Record<string, boolean>;
   nowRef: React.MutableRefObject<number>;
+  reducedMotion: boolean;
 }): Record<string, AgentMotion> {
-  const { agents, vacationById, nowRef } = args;
+  const { agents, vacationById, nowRef, reducedMotion } = args;
   const [motionById, setMotionById] = useState<Record<string, AgentMotion>>({});
 
   // Start entering transition when agent becomes visible, or set absent when hidden.
@@ -62,11 +66,28 @@ export function useAgentMotion(args: {
       for (const agent of Object.values(agents)) {
         const id = agent.id;
         const target = getAgentPosition(id); // DESK_CONFIGS 사용
-        const wantsVisible = agent.status !== "idle" || Boolean(vacationById[id]);
+        const wantsVisible =
+          agent.status !== "idle" || Boolean(vacationById[id]);
         const current = next[id];
 
+        if (reducedMotion) {
+          const position = { ...target, alpha: 1 };
+          next[id] = {
+            phase:
+              wantsVisible || (current && current.phase !== "absent")
+                ? "present"
+                : "absent",
+            startedAt: ts,
+            durationMs: 1,
+            from: position,
+            to: position,
+          };
+          continue;
+        }
+
         const currentPhase: MotionPhase = current?.phase ?? "absent";
-        const isCurrentlyWalking = currentPhase === "walking" || currentPhase === "returning";
+        const isCurrentlyWalking =
+          currentPhase === "walking" || currentPhase === "returning";
 
         if (wantsVisible) {
           // idle -> working transition
@@ -99,11 +120,12 @@ export function useAgentMotion(args: {
 
       return next;
     });
-  }, [agents, vacationById, nowRef]);
+  }, [agents, vacationById, nowRef, reducedMotion]);
 
   // Finalize motion transitions (entering->present, walking->next waypoint, returning->present).
   // Intentionally no dependency array - runs every render to detect completed animations.
   useEffect(() => {
+    if (reducedMotion) return;
     const ts = nowRef.current;
     setMotionById((prev) => {
       let changed = false;
@@ -131,4 +153,3 @@ export function useAgentMotion(args: {
 
   return motionById;
 }
-

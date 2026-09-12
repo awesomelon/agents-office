@@ -1,34 +1,19 @@
 use serde::{Deserialize, Serialize};
 
-/// Type of agent in the office (workflow-based)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Illustrative activity lanes, not identities of individual Codex agents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentType {
-    /// File exploration (Read, Glob)
     Explorer,
-    /// Content analysis (Grep, WebSearch)
     Analyzer,
-    /// Planning and task management (TodoWrite, Task)
     Architect,
-    /// Code writing (Write, Edit, NotebookEdit)
     Developer,
-    /// Command execution (Bash general)
     Operator,
-    /// Testing and validation (Bash test/git)
     Validator,
-    /// External integrations (WebFetch, MCP tools, Skill)
     Connector,
-    /// User communication (AskUserQuestion, Error)
     Liaison,
 }
 
-impl Default for AgentType {
-    fn default() -> Self {
-        Self::Developer
-    }
-}
-
-/// Current status of an agent
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentStatus {
@@ -40,8 +25,7 @@ pub enum AgentStatus {
     Error,
 }
 
-/// An agent in the office
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Agent {
     pub id: String,
     pub agent_type: AgentType,
@@ -50,29 +34,43 @@ pub struct Agent {
     pub desk_position: (f32, f32),
 }
 
-impl Agent {
-    pub fn new(id: String, agent_type: AgentType, desk_position: (f32, f32)) -> Self {
-        Self {
-            id,
-            agent_type,
-            status: AgentStatus::Idle,
-            current_task: None,
-            desk_position,
-        }
-    }
+pub fn initial_agents() -> Vec<Agent> {
+    use AgentType::*;
+    [
+        ("explorer", Explorer, (60.0, 130.0)),
+        ("analyzer", Analyzer, (150.0, 130.0)),
+        ("architect", Architect, (240.0, 130.0)),
+        ("developer", Developer, (60.0, 320.0)),
+        ("operator", Operator, (150.0, 320.0)),
+        ("validator", Validator, (240.0, 320.0)),
+        ("connector", Connector, (60.0, 520.0)),
+        ("liaison", Liaison, (150.0, 520.0)),
+    ]
+    .into_iter()
+    .map(|(id, agent_type, desk_position)| Agent {
+        id: id.into(),
+        agent_type,
+        desk_position,
+        status: AgentStatus::Idle,
+        current_task: None,
+    })
+    .collect()
 }
 
-/// A log entry from Claude Code
+/// Only bounded metadata summaries cross IPC. No prompts, reasoning or output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
+    pub id: String,
     pub timestamp: String,
     pub entry_type: LogEntryType,
     pub content: String,
     pub agent_id: Option<String>,
+    pub session_id: Option<String>,
     pub tool_name: Option<String>,
+    pub call_id: Option<String>,
+    pub agent_type: Option<AgentType>,
 }
 
-/// Type of log entry
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LogEntryType {
@@ -83,17 +81,51 @@ pub enum LogEntryType {
     TodoUpdate,
     SessionStart,
     SessionEnd,
+    TaskStart,
+    TaskComplete,
+    TurnAborted,
 }
 
-/// Event sent to the frontend
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WatcherState {
+    Starting,
+    Watching,
+    Missing,
+    Error,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatcherStatus {
+    pub active: bool,
+    pub path: String,
+    pub state: WatcherState,
+    pub message: String,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObserverSnapshot {
+    pub revision: u64,
+    pub watcher: WatcherStatus,
+    pub agents: Vec<Agent>,
+    pub logs: Vec<LogEntry>,
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AppEvent {
+    pub revision: u64,
+    #[serde(flatten)]
+    pub event: AppEventKind,
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "payload")]
-pub enum AppEvent {
-    LogEntry(LogEntry),
-    AgentUpdate(Agent),
-    SessionStart { session_id: String },
-    SessionEnd { session_id: String },
-    WatcherStatus { active: bool, path: String },
-    /// Batch update for performance - sends multiple logs and agents in one IPC call
-    BatchUpdate { logs: Vec<LogEntry>, agents: Vec<Agent> },
+pub enum AppEventKind {
+    WatcherStatus(WatcherStatus),
+    BatchUpdate {
+        logs: Vec<LogEntry>,
+        agents: Vec<Agent>,
+    },
 }

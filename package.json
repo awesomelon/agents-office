@@ -1,7 +1,7 @@
 {
   "name": "@j-ho/agents-office",
-  "version": "0.1.11",
-  "description": "Claude Code visualization as agents working in an office",
+  "version": "0.2.0",
+  "description": "A local, privacy-conscious pixel office for observing Codex session activity",
   "license": "MIT",
   "author": "j-ho",
   "repository": {
@@ -17,7 +17,7 @@
     "vite",
     "react",
     "pixijs",
-    "claude",
+    "codex",
     "visualization"
   ],
   "type": "module",
@@ -25,7 +25,7 @@
     "agents-office": "cli/agents-office.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "files": [
     "cli/"
@@ -37,10 +37,18 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "zip": "ditto -c -k --keepParent 'src-tauri/target/release/bundle/macos/Agents Office.app' 'Agents-Office-macos.zip'"
+    "zip": "ditto -c -k --keepParent 'src-tauri/target/release/bundle/macos/Agents Office.app' 'Codex-Office-macos.zip' && shasum -a 256 Codex-Office-macos.zip > Codex-Office-macos.zip.sha256",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:frontend && npm run test:cli",
+    "test:frontend": "vitest run",
+    "test:cli": "node --test tests/cli/*.test.mjs",
+    "test:core": "cargo test --manifest-path src-tauri/core-tests/Cargo.toml",
+    "check": "npm run check:metadata && npm run typecheck && npm test && npm run build",
+    "check:metadata": "node scripts/check-metadata.mjs"
   },
   "dependencies": {
     "@pixi/react": "^7.1.2",
+    "@pixi/unsafe-eval": "7.4.3",
     "@tauri-apps/api": "^2.1.1",
     "pixi.js": "^7.4.2",
     "react": "^18.3.1",
@@ -49,13 +57,18 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^26.1.0",
     "postcss": "^8.4.49",
+    "prettier": "3.6.2",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vitest": "^3.2.7"
   }
 }

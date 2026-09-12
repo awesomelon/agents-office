@@ -85,6 +85,9 @@ export const TIMELINE_COLORS: Record<LogEntryType, string> = {
   message: "#6b7280", // gray
   session_start: "#facc15", // yellow
   session_end: "#facc15", // yellow
+  task_start: "#60a5fa",
+  task_complete: "#4ade80",
+  turn_aborted: "#fb923c",
 };
 
 // =============================================================================
